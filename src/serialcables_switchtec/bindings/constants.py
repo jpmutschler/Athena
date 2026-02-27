@@ -305,35 +305,6 @@ class EventFlags(IntFlag):
     DIS_FATAL = 1 << 8
 
 
-# ─── Event Counter Type Mask ────────────────────────────────────────
-
-
-class EvCntrTypeMask(IntFlag):
-    UNSUP_REQ_ERR = 1 << 0
-    ECRC_ERR = 1 << 1
-    MALFORM_TLP_ERR = 1 << 2
-    RCVR_OFLOW_ERR = 1 << 3
-    CMPLTR_ABORT_ERR = 1 << 4
-    POISONED_TLP_ERR = 1 << 5
-    SURPRISE_DOWN_ERR = 1 << 6
-    DATA_LINK_PROTO_ERR = 1 << 7
-    HDR_LOG_OFLOW_ERR = 1 << 8
-    UNCOR_INT_ERR = 1 << 9
-    REPLAY_TMR_TIMEOUT = 1 << 10
-    REPLAY_NUM_ROLLOVER = 1 << 11
-    BAD_DLLP = 1 << 12
-    BAD_TLP = 1 << 13
-    RCVR_ERR = 1 << 14
-    RCV_FATAL_MSG = 1 << 15
-    RCV_NON_FATAL_MSG = 1 << 16
-    RCV_CORR_MSG = 1 << 17
-    NAK_RCVD = 1 << 18
-    RULE_TABLE_HIT = 1 << 19
-    POSTED_TLP = 1 << 20
-    COMP_TLP = 1 << 21
-    NON_POSTED_TLP = 1 << 22
-
-
 # ─── Link Rate Enum ─────────────────────────────────────────────────
 
 
@@ -624,6 +595,40 @@ class FwRo(IntEnum):
 
     RW = 0
     RO = 1
+
+
+# ─── Event Counter Type Masks ────────────────────────────────────────
+
+
+class EvCntrTypeMask(IntFlag):
+    """Event counter type mask (may be OR'd together)."""
+
+    UNSUP_REQ_ERR = 1 << 0
+    ECRC_ERR = 1 << 1
+    MALFORM_TLP_ERR = 1 << 2
+    RCVR_OFLOW_ERR = 1 << 3
+    CMPLTR_ABORT_ERR = 1 << 4
+    POISONED_TLP_ERR = 1 << 5
+    SURPRISE_DOWN_ERR = 1 << 6
+    DATA_LINK_PROTO_ERR = 1 << 7
+    HDR_LOG_OFLOW_ERR = 1 << 8
+    UNCOR_INT_ERR = 1 << 9
+    REPLAY_TMR_TIMEOUT = 1 << 10
+    REPLAY_NUM_ROLLOVER = 1 << 11
+    BAD_DLLP = 1 << 12
+    BAD_TLP = 1 << 13
+    RCVR_ERR = 1 << 14
+    RCV_FATAL_MSG = 1 << 15
+    RCV_NON_FATAL_MSG = 1 << 16
+    RCV_CORR_MSG = 1 << 17
+    NAK_RCVD = 1 << 18
+    RULE_TABLE_HIT = 1 << 19
+    POSTED_TLP = 1 << 20
+    COMP_TLP = 1 << 21
+    NON_POSTED_TLP = 1 << 22
+    ALL_ERRORS = (1 << 19) - 1
+    ALL_TLPS = (1 << 20) | (1 << 21) | (1 << 22)
+    ALL = (1 << 23) - 1
 
 
 # ─── Fabric Port Control ────────────────────────────────────────────

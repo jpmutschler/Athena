@@ -23,25 +23,13 @@ def _find_library_paths() -> list[Path]:
     """Build a list of candidate paths for the Switchtec shared library.
 
     Search order:
-    1. Vendored build in vendor/switchtec
-    2. SWITCHTEC_LIB_DIR environment variable
-    3. System library paths
+    1. SWITCHTEC_LIB_DIR environment variable (explicit override)
+    2. Vendored build in vendor/switchtec/lib/ (built by scripts/build_lib.py)
+    3. System library paths (LD_LIBRARY_PATH / PATH)
     """
     candidates: list[Path] = []
 
-    # 1. Vendored build (relative to this package)
-    pkg_dir = Path(__file__).resolve().parent.parent.parent.parent
-    vendor_dir = pkg_dir / "vendor" / "switchtec"
-
-    if sys.platform == "win32":
-        candidates.append(vendor_dir / "switchtec.dll")
-        candidates.append(vendor_dir / "lib" / "switchtec.dll")
-    else:
-        candidates.append(vendor_dir / "libswitchtec.so")
-        candidates.append(vendor_dir / ".libs" / "libswitchtec.so")
-        candidates.append(vendor_dir / "lib" / "libswitchtec.so")
-
-    # 2. SWITCHTEC_LIB_DIR environment variable
+    # 1. SWITCHTEC_LIB_DIR environment variable (explicit override)
     env_dir = os.environ.get("SWITCHTEC_LIB_DIR")
     if env_dir:
         p = Path(env_dir)
@@ -51,6 +39,18 @@ def _find_library_paths() -> list[Path]:
             for so in sorted(p.glob("libswitchtec*.so*"), reverse=True):
                 candidates.append(so)
             candidates.append(p / "libswitchtec.so")
+
+    # 2. Vendored build (relative to this package)
+    pkg_dir = Path(__file__).resolve().parent.parent.parent.parent
+    vendor_dir = pkg_dir / "vendor" / "switchtec"
+
+    if sys.platform == "win32":
+        candidates.append(vendor_dir / "lib" / "switchtec.dll")
+        candidates.append(vendor_dir / "switchtec.dll")
+    else:
+        candidates.append(vendor_dir / "lib" / "libswitchtec.so")
+        candidates.append(vendor_dir / "libswitchtec.so")
+        candidates.append(vendor_dir / ".libs" / "libswitchtec.so")
 
     # 3. System library paths
     if sys.platform != "win32":

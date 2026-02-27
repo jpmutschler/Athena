@@ -2,30 +2,22 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Path
+import tempfile
+from pathlib import Path as FilePath
+
+from fastapi import APIRouter, HTTPException, Path, UploadFile
 from pydantic import BaseModel
 
+from serialcables_switchtec.api.dependencies import DEVICE_ID_PATTERN, get_device
 from serialcables_switchtec.api.error_handlers import raise_on_error
-from serialcables_switchtec.api.state import get_device_registry
-from serialcables_switchtec.core.device import SwitchtecDevice
 from serialcables_switchtec.core.firmware import FirmwareManager
 from serialcables_switchtec.models.firmware import FwPartSummary
 
 router = APIRouter()
 
-_DEVICE_ID_PATTERN = r"^[a-zA-Z0-9_-]{1,64}$"
+MAX_FIRMWARE_UPLOAD_SIZE = 64 * 1024 * 1024  # 64 MB
 
 
-def _get_dev(device_id: str) -> SwitchtecDevice:
-    """Look up a device from the registry or raise 404."""
-    registry = get_device_registry()
-    entry = registry.get(device_id)
-    if entry is None:
-        raise HTTPException(
-            status_code=404, detail=f"Device {device_id} not found"
-        )
-    dev, _path = entry
-    return dev
 
 
 class TogglePartitionRequest(BaseModel):
@@ -42,10 +34,10 @@ class SetBootRoRequest(BaseModel):
 
 @router.get("/{device_id}/firmware/version")
 def get_fw_version(
-    device_id: str = Path(pattern=_DEVICE_ID_PATTERN),
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> dict[str, str]:
     """Get the current firmware version string."""
-    dev = _get_dev(device_id)
+    dev = get_device(device_id)
     try:
         mgr = FirmwareManager(dev)
         version = mgr.get_fw_version()
@@ -56,11 +48,11 @@ def get_fw_version(
 
 @router.post("/{device_id}/firmware/toggle")
 def toggle_active_partition(
-    device_id: str = Path(pattern=_DEVICE_ID_PATTERN),
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     request: TogglePartitionRequest = ...,
 ) -> dict[str, str]:
     """Toggle the active firmware partition."""
-    dev = _get_dev(device_id)
+    dev = get_device(device_id)
     try:
         mgr = FirmwareManager(dev)
         mgr.toggle_active_partition(
@@ -77,10 +69,10 @@ def toggle_active_partition(
 
 @router.get("/{device_id}/firmware/boot-ro")
 def get_boot_ro(
-    device_id: str = Path(pattern=_DEVICE_ID_PATTERN),
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> dict[str, bool]:
     """Check if boot partition is read-only."""
-    dev = _get_dev(device_id)
+    dev = get_device(device_id)
     try:
         mgr = FirmwareManager(dev)
         ro = mgr.is_boot_ro()
@@ -91,11 +83,11 @@ def get_boot_ro(
 
 @router.post("/{device_id}/firmware/boot-ro")
 def set_boot_ro(
-    device_id: str = Path(pattern=_DEVICE_ID_PATTERN),
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     request: SetBootRoRequest = ...,
 ) -> dict[str, str]:
     """Set boot partition read-only flag."""
-    dev = _get_dev(device_id)
+    dev = get_device(device_id)
     try:
         mgr = FirmwareManager(dev)
         mgr.set_boot_ro(read_only=request.read_only)
@@ -104,15 +96,60 @@ def set_boot_ro(
         raise_on_error(e, "set_boot_ro")
 
 
+@router.post("/{device_id}/firmware/write")
+async def write_firmware(
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
+    file: UploadFile = ...,
+    dont_activate: bool = False,
+    force: bool = False,
+) -> dict[str, str]:
+    """Write a firmware image to the device (multipart upload)."""
+    dev = get_device(device_id)
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            suffix=".bin", delete=False
+        ) as tmp:
+            tmp_path = tmp.name
+            total = 0
+            chunk_size = 64 * 1024
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_FIRMWARE_UPLOAD_SIZE:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Firmware image exceeds {MAX_FIRMWARE_UPLOAD_SIZE} byte limit",
+                    )
+                tmp.write(chunk)
+
+        mgr = FirmwareManager(dev)
+        mgr.write_firmware(
+            tmp_path,
+            dont_activate=dont_activate,
+            force=force,
+        )
+        return {"status": "written", "filename": file.filename or "unknown"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise_on_error(e, "write_firmware")
+    finally:
+        if tmp_path is not None:
+            FilePath(tmp_path).unlink(missing_ok=True)
+
+
 @router.get(
     "/{device_id}/firmware/summary",
     response_model=FwPartSummary,
 )
 def get_fw_summary(
-    device_id: str = Path(pattern=_DEVICE_ID_PATTERN),
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> FwPartSummary:
     """Get a summary of all firmware partitions."""
-    dev = _get_dev(device_id)
+    dev = get_device(device_id)
     try:
         mgr = FirmwareManager(dev)
         return mgr.get_part_summary()

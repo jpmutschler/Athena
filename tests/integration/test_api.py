@@ -119,15 +119,14 @@ class TestAuth:
     """API key authentication tests."""
 
     def test_api_key_not_configured(self, monkeypatch, app):
-        """Requests should get 503 when SWITCHTEC_API_KEY is not set."""
+        """Requests should succeed when SWITCHTEC_API_KEY is not set (auth disabled)."""
         monkeypatch.delenv("SWITCHTEC_API_KEY", raising=False)
         with TestClient(app) as tc:
             response = tc.get("/api/health")
-            # Health endpoint has no auth dependency, so it passes
             assert response.status_code == 200
-            # Device routes should return 503 when API key is not configured
+            # Device routes should pass through when auth is disabled
             response = tc.get("/api/devices/")
-            assert response.status_code == 503
+            assert response.status_code == 200
 
     def test_api_key_required(self, monkeypatch, app):
         """Requests without an API key header should be rejected when key is set."""
@@ -720,6 +719,163 @@ class TestDiagRoutes:
         assert response.json() == {"status": "injected"}
         mock_injector.inject_cto.assert_called_once_with(12)
 
+    def test_inject_tlp_lcrc_happy_path(self, client, registered_device):
+        """POST TLP LCRC inject should invoke ErrorInjector.inject_tlp_lcrc."""
+        mock_injector = MagicMock()
+        with patch(
+            "serialcables_switchtec.api.routes.diagnostics.ErrorInjector",
+            return_value=mock_injector,
+        ):
+            response = client.post(
+                "/api/devices/testdev/diag/inject/tlp-lcrc/4",
+                json={"enable": True, "rate": 5},
+            )
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+        mock_injector.inject_tlp_lcrc.assert_called_once_with(4, True, 5)
+
+    def test_inject_tlp_lcrc_defaults(self, client, registered_device):
+        """POST TLP LCRC inject with empty body should use defaults."""
+        mock_injector = MagicMock()
+        with patch(
+            "serialcables_switchtec.api.routes.diagnostics.ErrorInjector",
+            return_value=mock_injector,
+        ):
+            response = client.post(
+                "/api/devices/testdev/diag/inject/tlp-lcrc/0",
+                json={},
+            )
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+        mock_injector.inject_tlp_lcrc.assert_called_once_with(0, True, 1)
+
+    def test_inject_tlp_lcrc_disable(self, client, registered_device):
+        """POST TLP LCRC inject with enable=False should disable injection."""
+        mock_injector = MagicMock()
+        with patch(
+            "serialcables_switchtec.api.routes.diagnostics.ErrorInjector",
+            return_value=mock_injector,
+        ):
+            response = client.post(
+                "/api/devices/testdev/diag/inject/tlp-lcrc/2",
+                json={"enable": False, "rate": 0},
+            )
+        assert response.status_code == 200
+        mock_injector.inject_tlp_lcrc.assert_called_once_with(2, False, 0)
+
+    def test_inject_tlp_lcrc_not_found(self, client):
+        """POST TLP LCRC inject for nonexistent device should return 404."""
+        response = client.post(
+            "/api/devices/nonexistent/diag/inject/tlp-lcrc/0",
+            json={},
+        )
+        assert response.status_code == 404
+
+    def test_inject_tlp_lcrc_invalid_port(self, client, registered_device):
+        """POST TLP LCRC inject with port > 59 should return 422."""
+        response = client.post(
+            "/api/devices/testdev/diag/inject/tlp-lcrc/100",
+            json={},
+        )
+        assert response.status_code == 422
+
+    def test_inject_tlp_lcrc_invalid_rate(self, client, registered_device):
+        """POST TLP LCRC inject with rate > 255 should return 422."""
+        response = client.post(
+            "/api/devices/testdev/diag/inject/tlp-lcrc/0",
+            json={"rate": 999},
+        )
+        assert response.status_code == 422
+
+    def test_inject_seq_num_happy_path(self, client, registered_device):
+        """POST seq-num inject should invoke ErrorInjector.inject_tlp_seq_num."""
+        mock_injector = MagicMock()
+        with patch(
+            "serialcables_switchtec.api.routes.diagnostics.ErrorInjector",
+            return_value=mock_injector,
+        ):
+            response = client.post(
+                "/api/devices/testdev/diag/inject/seq-num/8",
+            )
+        assert response.status_code == 200
+        assert response.json() == {"status": "injected"}
+        mock_injector.inject_tlp_seq_num.assert_called_once_with(8)
+
+    def test_inject_seq_num_not_found(self, client):
+        """POST seq-num inject for nonexistent device should return 404."""
+        response = client.post(
+            "/api/devices/nonexistent/diag/inject/seq-num/0",
+        )
+        assert response.status_code == 404
+
+    def test_inject_seq_num_invalid_port(self, client, registered_device):
+        """POST seq-num inject with port > 59 should return 422."""
+        response = client.post(
+            "/api/devices/testdev/diag/inject/seq-num/60",
+        )
+        assert response.status_code == 422
+
+    def test_inject_ack_nack_happy_path(self, client, registered_device):
+        """POST ack-nack inject should invoke ErrorInjector.inject_ack_nack."""
+        mock_injector = MagicMock()
+        with patch(
+            "serialcables_switchtec.api.routes.diagnostics.ErrorInjector",
+            return_value=mock_injector,
+        ):
+            response = client.post(
+                "/api/devices/testdev/diag/inject/ack-nack/6",
+                json={"seq_num": 100, "count": 3},
+            )
+        assert response.status_code == 200
+        assert response.json() == {"status": "injected"}
+        mock_injector.inject_ack_nack.assert_called_once_with(6, 100, 3)
+
+    def test_inject_ack_nack_default_count(self, client, registered_device):
+        """POST ack-nack inject should default count to 1."""
+        mock_injector = MagicMock()
+        with patch(
+            "serialcables_switchtec.api.routes.diagnostics.ErrorInjector",
+            return_value=mock_injector,
+        ):
+            response = client.post(
+                "/api/devices/testdev/diag/inject/ack-nack/0",
+                json={"seq_num": 50, "count": 1},
+            )
+        assert response.status_code == 200
+        mock_injector.inject_ack_nack.assert_called_once_with(0, 50, 1)
+
+    def test_inject_ack_nack_not_found(self, client):
+        """POST ack-nack inject for nonexistent device should return 404."""
+        response = client.post(
+            "/api/devices/nonexistent/diag/inject/ack-nack/0",
+            json={"seq_num": 0, "count": 1},
+        )
+        assert response.status_code == 404
+
+    def test_inject_ack_nack_invalid_port(self, client, registered_device):
+        """POST ack-nack inject with port > 59 should return 422."""
+        response = client.post(
+            "/api/devices/testdev/diag/inject/ack-nack/100",
+            json={"seq_num": 0, "count": 1},
+        )
+        assert response.status_code == 422
+
+    def test_inject_ack_nack_missing_seq_num(self, client, registered_device):
+        """POST ack-nack inject without seq_num should return 422."""
+        response = client.post(
+            "/api/devices/testdev/diag/inject/ack-nack/0",
+            json={"count": 1},
+        )
+        assert response.status_code == 422
+
+    def test_inject_ack_nack_invalid_count(self, client, registered_device):
+        """POST ack-nack inject with count > 255 should return 422."""
+        response = client.post(
+            "/api/devices/testdev/diag/inject/ack-nack/0",
+            json={"seq_num": 0, "count": 300},
+        )
+        assert response.status_code == 422
+
     def test_rcvr_obj_happy_path(self, client, registered_device):
         """GET receiver object should return ReceiverObject from DiagnosticsManager."""
         from serialcables_switchtec.models.diagnostics import ReceiverObject
@@ -1042,6 +1198,58 @@ class TestDiagRoutes:
                 "/api/devices/testdev/diag/inject/cto/0",
             )
         assert response.status_code == 504
+
+    def test_inject_tlp_lcrc_error_maps_to_http(
+        self, client, registered_device
+    ):
+        """inject_tlp_lcrc raising SwitchtecError should be mapped to HTTP error."""
+        mock_injector = MagicMock()
+        mock_injector.inject_tlp_lcrc.side_effect = MrpcError(
+            "mrpc failed", error_code=9
+        )
+        with patch(
+            "serialcables_switchtec.api.routes.diagnostics.ErrorInjector",
+            return_value=mock_injector,
+        ):
+            response = client.post(
+                "/api/devices/testdev/diag/inject/tlp-lcrc/0", json={},
+            )
+        assert response.status_code == 502
+
+    def test_inject_seq_num_error_maps_to_http(
+        self, client, registered_device
+    ):
+        """inject_seq_num raising SwitchtecError should be mapped to HTTP error."""
+        mock_injector = MagicMock()
+        mock_injector.inject_tlp_seq_num.side_effect = InvalidPortError(
+            "bad port", error_code=2
+        )
+        with patch(
+            "serialcables_switchtec.api.routes.diagnostics.ErrorInjector",
+            return_value=mock_injector,
+        ):
+            response = client.post(
+                "/api/devices/testdev/diag/inject/seq-num/0",
+            )
+        assert response.status_code == 400
+
+    def test_inject_ack_nack_error_maps_to_http(
+        self, client, registered_device
+    ):
+        """inject_ack_nack raising SwitchtecError should be mapped to HTTP error."""
+        mock_injector = MagicMock()
+        mock_injector.inject_ack_nack.side_effect = SwitchtecPermissionError(
+            "denied", error_code=5
+        )
+        with patch(
+            "serialcables_switchtec.api.routes.diagnostics.ErrorInjector",
+            return_value=mock_injector,
+        ):
+            response = client.post(
+                "/api/devices/testdev/diag/inject/ack-nack/0",
+                json={"seq_num": 0, "count": 1},
+            )
+        assert response.status_code == 403
 
     def test_rcvr_obj_error_maps_to_http(self, client, registered_device):
         """rcvr_obj raising SwitchtecError should be mapped to HTTP error."""

@@ -119,6 +119,13 @@ class FakeLibrary:
         self.switchtec_get_gfms_events = MagicMock(return_value=0)
         self.switchtec_clear_gfms_events = MagicMock(return_value=0)
 
+        # Event counter functions
+        self.switchtec_evcntr_setup = MagicMock(return_value=0)
+        self.switchtec_evcntr_get_setup = MagicMock(return_value=0)
+        self.switchtec_evcntr_get = MagicMock(return_value=0)
+        self.switchtec_evcntr_get_both = MagicMock(return_value=0)
+        self.switchtec_evcntr_wait = MagicMock(return_value=0)
+
         # OSA functions
         self.switchtec_osa = MagicMock(return_value=0)
         self.switchtec_osa_config_type = MagicMock(return_value=0)

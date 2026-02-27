@@ -68,6 +68,9 @@ def create_app() -> FastAPI:
     from serialcables_switchtec.api.routes.diagnostics import (
         router as diag_router,
     )
+    from serialcables_switchtec.api.routes.evcntr import (
+        router as evcntr_router,
+    )
     from serialcables_switchtec.api.routes.events import (
         router as events_router,
     )
@@ -76,6 +79,12 @@ def create_app() -> FastAPI:
     )
     from serialcables_switchtec.api.routes.firmware import (
         router as firmware_router,
+    )
+    from serialcables_switchtec.api.routes.osa import (
+        router as osa_router,
+    )
+    from serialcables_switchtec.api.routes.performance import (
+        router as perf_router,
     )
     from serialcables_switchtec.api.routes.ports import (
         router as ports_router,
@@ -106,6 +115,12 @@ def create_app() -> FastAPI:
         dependencies=auth_dep,
     )
     app.include_router(
+        evcntr_router,
+        prefix="/api/devices",
+        tags=["evcntr"],
+        dependencies=auth_dep,
+    )
+    app.include_router(
         events_router,
         prefix="/api/devices",
         tags=["events"],
@@ -115,6 +130,18 @@ def create_app() -> FastAPI:
         fabric_router,
         prefix="/api/devices",
         tags=["fabric"],
+        dependencies=auth_dep,
+    )
+    app.include_router(
+        osa_router,
+        prefix="/api/devices",
+        tags=["osa"],
+        dependencies=auth_dep,
+    )
+    app.include_router(
+        perf_router,
+        prefix="/api/devices",
+        tags=["performance"],
         dependencies=auth_dep,
     )
 

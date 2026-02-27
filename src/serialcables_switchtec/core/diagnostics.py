@@ -55,6 +55,8 @@ class DiagnosticsManager:
 
     def __init__(self, device: SwitchtecDevice) -> None:
         self._dev = device
+        self._eye_x_range: EyeRange | None = None
+        self._eye_y_range: EyeRange | None = None
 
     # ─── Eye Diagram ─────────────────────────────────────────────────
 
@@ -89,6 +91,8 @@ class DiagnosticsManager:
             hstep, data_mode, eye_mode, refclk, vstep,
         )
         check_error(ret, "eye_start")
+        self._eye_x_range = EyeRange(start=x_start, end=x_end, step=x_step)
+        self._eye_y_range = EyeRange(start=y_start, end=y_end, step=y_step)
         logger.info("eye_capture_started", lane_mask=lane_mask)
 
     def eye_fetch(self, pixel_count: int) -> EyeData:
@@ -108,10 +112,13 @@ class DiagnosticsManager:
         )
         check_error(ret, "eye_fetch")
 
+        x_range = self._eye_x_range or EyeRange(start=0, end=0, step=1)
+        y_range = self._eye_y_range or EyeRange(start=0, end=0, step=1)
+
         return EyeData(
             lane_id=lane_id.value,
-            x_range=EyeRange(start=0, end=0, step=1),
-            y_range=EyeRange(start=0, end=0, step=1),
+            x_range=x_range,
+            y_range=y_range,
             pixels=[pixels[i] for i in range(pixel_count)],
         )
 
@@ -119,6 +126,8 @@ class DiagnosticsManager:
         """Cancel an in-progress eye diagram capture."""
         ret = self._dev.lib.switchtec_diag_eye_cancel(self._dev.handle)
         check_error(ret, "eye_cancel")
+        self._eye_x_range = None
+        self._eye_y_range = None
 
     def eye_set_mode(self, mode: int) -> None:
         """Set eye diagram data mode (raw vs ratio)."""

@@ -116,6 +116,50 @@ class SwitchtecFwImageInfo(Structure):
     ]
 
 
+class SwitchtecFwPartType(Structure):
+    """Matches struct switchtec_fw_part_type (nested in fw_part_summary)."""
+
+    _fields_ = [
+        ("active", ctypes.POINTER(SwitchtecFwImageInfo)),
+        ("inactive", ctypes.POINTER(SwitchtecFwImageInfo)),
+    ]
+
+
+class SwitchtecFwPartSummary(Structure):
+    """Matches struct switchtec_fw_part_summary in switchtec.h.
+
+    Note: The flexible array member ``all[]`` is not included here.
+    We only need the fixed-size header to read partition pointers.
+    """
+
+    _fields_ = [
+        ("boot", SwitchtecFwPartType),
+        ("map", SwitchtecFwPartType),
+        ("img", SwitchtecFwPartType),
+        ("cfg", SwitchtecFwPartType),
+        ("nvlog", SwitchtecFwPartType),
+        ("seeprom", SwitchtecFwPartType),
+        ("key", SwitchtecFwPartType),
+        ("bl2", SwitchtecFwPartType),
+        ("riot", SwitchtecFwPartType),
+        ("mult_cfg", ctypes.POINTER(SwitchtecFwImageInfo)),
+        ("nr_info", c_int),
+    ]
+
+
+# ─── Event Counter Setup ───────────────────────────────────────────
+
+class SwitchtecEvCntrSetup(Structure):
+    """Matches struct switchtec_evcntr_setup in switchtec.h."""
+
+    _fields_ = [
+        ("port_mask", ctypes.c_uint),
+        ("type_mask", c_int),  # enum switchtec_evcntr_type_mask
+        ("egress", c_int),
+        ("threshold", ctypes.c_uint),
+    ]
+
+
 # ─── Bandwidth Counter ──────────────────────────────────────────────
 
 class SwitchtecBwCntrDir(Structure):

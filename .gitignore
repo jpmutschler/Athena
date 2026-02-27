@@ -27,6 +27,13 @@ env/
 .coverage
 htmlcov/
 
+# Compiled shared libraries (built by scripts/build_lib.py)
+vendor/switchtec/lib/*.dll
+vendor/switchtec/lib/*.so
+vendor/switchtec/lib/*.dylib
+!vendor/switchtec/lib/.gitkeep
+resources/switchtec-user-4.4-rc2/build/
+
 # OS
 .DS_Store
 Thumbs.db

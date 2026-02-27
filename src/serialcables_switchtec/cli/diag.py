@@ -48,9 +48,45 @@ def eye(device_path: str, lanes: str, x_step: int, y_step: int) -> None:
         raise click.Abort()
 
 
+@diag.command("eye-fetch")
+@click.argument("device_path")
+@click.option("--pixels", default=4096, type=int, help="Number of pixels to fetch.")
+@click.pass_context
+def eye_fetch(ctx: click.Context, device_path: str, pixels: int) -> None:
+    """Fetch eye diagram data from an in-progress capture."""
+    try:
+        with SwitchtecDevice.open(device_path) as dev:
+            diag_mgr = DiagnosticsManager(dev)
+            result = diag_mgr.eye_fetch(pixels)
+            if ctx.obj.get("json_output"):
+                click.echo(result.model_dump_json(indent=2))
+            else:
+                click.echo(f"Lane: {result.lane_id}")
+                click.echo(f"Pixels fetched: {len(result.pixels)}")
+                non_zero = sum(1 for p in result.pixels if p != 0.0)
+                click.echo(f"Non-zero pixels: {non_zero}")
+    except SwitchtecError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+
+@diag.command("eye-cancel")
+@click.argument("device_path")
+def eye_cancel(device_path: str) -> None:
+    """Cancel an in-progress eye diagram capture."""
+    try:
+        with SwitchtecDevice.open(device_path) as dev:
+            diag_mgr = DiagnosticsManager(dev)
+            diag_mgr.eye_cancel()
+            click.echo("Eye diagram capture cancelled.")
+    except SwitchtecError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+
 @diag.command()
 @click.argument("device_path")
-@click.argument("port_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
 @click.pass_context
 def ltssm(ctx: click.Context, device_path: str, port_id: int) -> None:
     """Dump LTSSM state log for a port."""
@@ -73,7 +109,7 @@ def ltssm(ctx: click.Context, device_path: str, port_id: int) -> None:
 
 @diag.command("ltssm-clear")
 @click.argument("device_path")
-@click.argument("port_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
 def ltssm_clear(device_path: str, port_id: int) -> None:
     """Clear LTSSM log for a port."""
     try:
@@ -88,7 +124,7 @@ def ltssm_clear(device_path: str, port_id: int) -> None:
 
 @diag.command()
 @click.argument("device_path")
-@click.argument("port_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
 @click.option("--enable/--disable", default=True, help="Enable or disable loopback.")
 @click.option(
     "--ltssm-speed",
@@ -113,7 +149,7 @@ def loopback(device_path: str, port_id: int, enable: bool, ltssm_speed: str) -> 
 
 @diag.command()
 @click.argument("device_path")
-@click.argument("port_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
 @click.option(
     "--pattern",
     type=click.Choice(list(_PATTERN_MAP.keys()), case_sensitive=False),
@@ -143,8 +179,8 @@ def patgen(device_path: str, port_id: int, pattern: str, speed: str) -> None:
 
 @diag.command()
 @click.argument("device_path")
-@click.argument("port_id", type=int)
-@click.argument("lane_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
+@click.argument("lane_id", type=click.IntRange(0, 143))
 @click.pass_context
 def patmon(ctx: click.Context, device_path: str, port_id: int, lane_id: int) -> None:
     """Get pattern monitor results."""
@@ -173,7 +209,7 @@ def inject(ctx: click.Context) -> None:
 
 @inject.command()
 @click.argument("device_path")
-@click.argument("port_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
 @click.option("--data", required=True, type=int, help="DLLP data to inject.")
 def dllp(device_path: str, port_id: int, data: int) -> None:
     """Inject a raw DLLP on a port."""
@@ -189,7 +225,7 @@ def dllp(device_path: str, port_id: int, data: int) -> None:
 
 @inject.command("dllp-crc")
 @click.argument("device_path")
-@click.argument("port_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
 @click.option("--enable/--disable", default=True, help="Enable or disable DLLP CRC injection.")
 @click.option("--rate", default=1, type=int, help="Injection rate (0-65535).")
 def dllp_crc(device_path: str, port_id: int, enable: bool, rate: int) -> None:
@@ -207,7 +243,7 @@ def dllp_crc(device_path: str, port_id: int, enable: bool, rate: int) -> None:
 
 @inject.command("tlp-lcrc")
 @click.argument("device_path")
-@click.argument("port_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
 @click.option("--enable/--disable", default=True, help="Enable or disable TLP LCRC injection.")
 @click.option("--rate", default=1, type=int, help="Injection rate (0-255).")
 def tlp_lcrc(device_path: str, port_id: int, enable: bool, rate: int) -> None:
@@ -225,7 +261,7 @@ def tlp_lcrc(device_path: str, port_id: int, enable: bool, rate: int) -> None:
 
 @inject.command("seq-num")
 @click.argument("device_path")
-@click.argument("port_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
 def seq_num(device_path: str, port_id: int) -> None:
     """Inject a TLP sequence number error."""
     try:
@@ -240,7 +276,7 @@ def seq_num(device_path: str, port_id: int) -> None:
 
 @inject.command("ack-nack")
 @click.argument("device_path")
-@click.argument("port_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
 @click.option("--seq-num", required=True, type=int, help="Sequence number.")
 @click.option("--count", default=1, type=int, help="Number of errors to inject.")
 def ack_nack(device_path: str, port_id: int, seq_num: int, count: int) -> None:
@@ -257,7 +293,7 @@ def ack_nack(device_path: str, port_id: int, seq_num: int, count: int) -> None:
 
 @inject.command()
 @click.argument("device_path")
-@click.argument("port_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
 def cto(device_path: str, port_id: int) -> None:
     """Inject completion timeout."""
     try:
@@ -274,8 +310,8 @@ def cto(device_path: str, port_id: int) -> None:
 
 @diag.command()
 @click.argument("device_path")
-@click.argument("port_id", type=int)
-@click.argument("lane_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
+@click.argument("lane_id", type=click.IntRange(0, 143))
 @click.option("--link", type=click.Choice(["current", "previous"]), default="current",
               help="Link to query.")
 @click.pass_context
@@ -301,7 +337,7 @@ def rcvr(ctx: click.Context, device_path: str, port_id: int, lane_id: int, link:
 
 @diag.command()
 @click.argument("device_path")
-@click.argument("port_id", type=int)
+@click.argument("port_id", type=click.IntRange(0, 59))
 @click.option("--end", type=click.Choice(["local", "far_end"]), default="local",
               help="Which end to query.")
 @click.option("--link", type=click.Choice(["current", "previous"]), default="current",

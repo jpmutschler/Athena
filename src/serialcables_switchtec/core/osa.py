@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import c_uint32
+from typing import TYPE_CHECKING
 
-from serialcables_switchtec.core.device import SwitchtecDevice
 from serialcables_switchtec.exceptions import check_error
 from serialcables_switchtec.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from serialcables_switchtec.core.device import SwitchtecDevice
 
 logger = get_logger(__name__)
 

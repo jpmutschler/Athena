@@ -27,6 +27,7 @@ from serialcables_switchtec.bindings.types import (
     SwitchtecDeviceInfo,
     SwitchtecDiagCrossHair,
     SwitchtecDiagLtssmLog,
+    SwitchtecEvCntrSetup,
     SwitchtecEventSummary,
     SwitchtecFabPortConfig,
     SwitchtecFwImageInfo,
@@ -52,6 +53,7 @@ def setup_prototypes(lib: ctypes.CDLL) -> None:
     _setup_accessor_functions(lib)
     _setup_status_functions(lib)
     _setup_event_functions(lib)
+    _setup_evcntr_functions(lib)
     _setup_fw_functions(lib)
     _setup_bw_lat_functions(lib)
     _setup_diag_functions(lib)
@@ -211,6 +213,51 @@ def _setup_event_functions(lib: ctypes.CDLL) -> None:
     lib.switchtec_event_wait.restype = c_int
 
 
+def _setup_evcntr_functions(lib: ctypes.CDLL) -> None:
+    """Event counter functions."""
+
+    # int switchtec_evcntr_type_count(void)
+    lib.switchtec_evcntr_type_count.argtypes = []
+    lib.switchtec_evcntr_type_count.restype = c_int
+
+    # int switchtec_evcntr_setup(struct switchtec_dev *dev, unsigned stack_id,
+    #     unsigned cntr_id, struct switchtec_evcntr_setup *setup)
+    lib.switchtec_evcntr_setup.argtypes = [
+        c_void_p, ctypes.c_uint, ctypes.c_uint, POINTER(SwitchtecEvCntrSetup),
+    ]
+    lib.switchtec_evcntr_setup.restype = c_int
+
+    # int switchtec_evcntr_get_setup(struct switchtec_dev *dev, unsigned stack_id,
+    #     unsigned cntr_id, unsigned nr_cntrs,
+    #     struct switchtec_evcntr_setup *res)
+    lib.switchtec_evcntr_get_setup.argtypes = [
+        c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,
+        POINTER(SwitchtecEvCntrSetup),
+    ]
+    lib.switchtec_evcntr_get_setup.restype = c_int
+
+    # int switchtec_evcntr_get(struct switchtec_dev *dev, unsigned stack_id,
+    #     unsigned cntr_id, unsigned nr_cntrs, unsigned *res, int clear)
+    lib.switchtec_evcntr_get.argtypes = [
+        c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,
+        POINTER(ctypes.c_uint), c_int,
+    ]
+    lib.switchtec_evcntr_get.restype = c_int
+
+    # int switchtec_evcntr_get_both(struct switchtec_dev *dev, unsigned stack_id,
+    #     unsigned cntr_id, unsigned nr_cntrs,
+    #     struct switchtec_evcntr_setup *setup, unsigned *counts, int clear)
+    lib.switchtec_evcntr_get_both.argtypes = [
+        c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,
+        POINTER(SwitchtecEvCntrSetup), POINTER(ctypes.c_uint), c_int,
+    ]
+    lib.switchtec_evcntr_get_both.restype = c_int
+
+    # int switchtec_evcntr_wait(struct switchtec_dev *dev, int timeout_ms)
+    lib.switchtec_evcntr_wait.argtypes = [c_void_p, c_int]
+    lib.switchtec_evcntr_wait.restype = c_int
+
+
 def _setup_fw_functions(lib: ctypes.CDLL) -> None:
     """Firmware management functions."""
 
@@ -255,6 +302,18 @@ def _setup_fw_functions(lib: ctypes.CDLL) -> None:
     #     const struct switchtec_fw_image_info *info)
     lib.switchtec_fw_image_type.argtypes = [POINTER(SwitchtecFwImageInfo)]
     lib.switchtec_fw_image_type.restype = c_char_p
+
+    # int switchtec_fw_write_fd(struct switchtec_dev *dev, int img_fd,
+    #     int dont_activate, int force,
+    #     void (*progress_callback)(int cur, int tot))
+    lib.switchtec_fw_write_fd.argtypes = [
+        c_void_p,
+        c_int,
+        c_int,
+        c_int,
+        ctypes.CFUNCTYPE(None, c_int, c_int),
+    ]
+    lib.switchtec_fw_write_fd.restype = c_int
 
 
 def _setup_bw_lat_functions(lib: ctypes.CDLL) -> None:

@@ -30,7 +30,7 @@ def fabric_group(ctx: click.Context) -> None:
 
 @fabric_group.command("port-control")
 @click.argument("device_path")
-@click.option("--port", required=True, type=int, help="Physical port ID.")
+@click.option("--port", required=True, type=click.IntRange(0, 59), help="Physical port ID.")
 @click.option(
     "--action",
     required=True,
@@ -70,7 +70,7 @@ def fabric_port_control(
 
 @fabric_group.command("port-config")
 @click.argument("device_path")
-@click.option("--port", required=True, type=int, help="Physical port ID.")
+@click.option("--port", required=True, type=click.IntRange(0, 59), help="Physical port ID.")
 @click.pass_context
 def fabric_port_config(ctx: click.Context, device_path: str, port: int) -> None:
     """Get fabric port configuration."""
@@ -93,10 +93,10 @@ def fabric_port_config(ctx: click.Context, device_path: str, port: int) -> None:
 @fabric_group.command("bind")
 @click.argument("device_path")
 @click.option("--host-sw-idx", required=True, type=int, help="Host switch index.")
-@click.option("--host-phys-port", required=True, type=int, help="Host physical port ID.")
+@click.option("--host-phys-port", required=True, type=click.IntRange(0, 59), help="Host physical port ID.")
 @click.option("--host-log-port", required=True, type=int, help="Host logical port ID.")
 @click.option("--ep-sw-idx", required=True, type=int, help="Endpoint switch index.")
-@click.option("--ep-phys-port", required=True, type=int, help="Endpoint physical port ID.")
+@click.option("--ep-phys-port", required=True, type=click.IntRange(0, 59), help="Endpoint physical port ID.")
 @click.pass_context
 def fabric_bind(
     ctx: click.Context,
@@ -137,7 +137,7 @@ def fabric_bind(
 @fabric_group.command("unbind")
 @click.argument("device_path")
 @click.option("--host-sw-idx", required=True, type=int, help="Host switch index.")
-@click.option("--host-phys-port", required=True, type=int, help="Host physical port ID.")
+@click.option("--host-phys-port", required=True, type=click.IntRange(0, 59), help="Host physical port ID.")
 @click.option("--host-log-port", required=True, type=int, help="Host logical port ID.")
 @click.option("--opt", default=0, type=int, help="Unbind option.")
 @click.pass_context

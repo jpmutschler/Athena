@@ -160,6 +160,46 @@ def fw_read(ctx: click.Context, device_path: str, address: str, length: int) -> 
         raise click.Abort()
 
 
+@fw_group.command("write")
+@click.argument("device_path")
+@click.argument("image_path", type=click.Path(exists=True))
+@click.option("--no-activate", is_flag=True, default=False,
+              help="Don't activate the new firmware after writing.")
+@click.option("--force", is_flag=True, default=False,
+              help="Force write even if image appears incompatible.")
+@click.pass_context
+def fw_write(
+    ctx: click.Context,
+    device_path: str,
+    image_path: str,
+    no_activate: bool,
+    force: bool,
+) -> None:
+    """Write a firmware image to the device."""
+    def _progress(cur: int, tot: int) -> None:
+        if tot > 0:
+            pct = cur * 100 // tot
+            click.echo(f"\rWriting firmware: {pct}% ({cur}/{tot})", nl=False)
+
+    try:
+        with SwitchtecDevice.open(device_path) as dev:
+            dev.firmware.write_firmware(
+                image_path,
+                dont_activate=no_activate,
+                force=force,
+                progress_callback=_progress,
+            )
+            click.echo()
+            if ctx.obj.get("json_output"):
+                click.echo(json.dumps({"status": "written", "image": image_path}))
+            else:
+                click.echo(f"Firmware image written: {image_path}")
+    except SwitchtecError as e:
+        click.echo()
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+
 @fw_group.command("summary")
 @click.argument("device_path")
 @click.pass_context
@@ -172,6 +212,25 @@ def fw_summary(ctx: click.Context, device_path: str) -> None:
                 click.echo(summary.model_dump_json(indent=2))
             else:
                 click.echo(f"Boot RO: {summary.is_boot_ro}")
+                part_names = [
+                    "boot", "map", "img", "cfg", "nvlog",
+                    "seeprom", "key", "bl2", "riot",
+                ]
+                for name in part_names:
+                    part = getattr(summary, name)
+                    if part.active is None and part.inactive is None:
+                        continue
+                    click.echo(f"\n{name.upper()}:")
+                    for slot, img in [("Active", part.active), ("Inactive", part.inactive)]:
+                        if img is None:
+                            continue
+                        valid = "valid" if img.valid else "INVALID"
+                        ro = " [RO]" if img.read_only else ""
+                        running = " *running*" if img.running else ""
+                        click.echo(
+                            f"  {slot:8s}  {img.version:20s}  "
+                            f"{img.generation:5s}  {valid}{ro}{running}"
+                        )
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
         raise click.Abort()

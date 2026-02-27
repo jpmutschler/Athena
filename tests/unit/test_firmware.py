@@ -6,6 +6,11 @@ import ctypes
 
 import pytest
 
+from serialcables_switchtec.bindings.constants import FwType, SwitchtecGen
+from serialcables_switchtec.bindings.types import (
+    SwitchtecFwImageInfo,
+    SwitchtecFwPartSummary,
+)
 from serialcables_switchtec.core.firmware import FirmwareManager
 from serialcables_switchtec.exceptions import InvalidParameterError, SwitchtecError
 from serialcables_switchtec.models.firmware import FwPartSummary
@@ -104,15 +109,66 @@ class TestFirmwareManagerReadFirmware:
         assert call_args[2] == 256
 
 
+def _make_image_info(
+    gen: int = SwitchtecGen.GEN4,
+    fw_type: int = FwType.IMG,
+    version: bytes = b"4.40",
+    part_addr: int = 0x10000,
+    part_len: int = 0x80000,
+    image_len: int = 0x70000,
+    valid: bool = True,
+    active: bool = True,
+    running: bool = False,
+    read_only: bool = False,
+) -> SwitchtecFwImageInfo:
+    """Build a SwitchtecFwImageInfo ctypes struct for testing."""
+    info = SwitchtecFwImageInfo()
+    info.gen = gen
+    info.type = fw_type
+    info.version = version.ljust(32, b"\x00")
+    info.part_addr = part_addr
+    info.part_len = part_len
+    info.image_len = image_len
+    info.valid = valid
+    info.active = active
+    info.running = running
+    info.read_only = read_only
+    return info
+
+
+def _make_part_summary_ptr(
+    boot_active: SwitchtecFwImageInfo | None = None,
+    img_active: SwitchtecFwImageInfo | None = None,
+    img_inactive: SwitchtecFwImageInfo | None = None,
+    cfg_active: SwitchtecFwImageInfo | None = None,
+) -> ctypes.c_void_p:
+    """Build a SwitchtecFwPartSummary and return its address as c_void_p."""
+    summary = SwitchtecFwPartSummary()
+    if boot_active is not None:
+        summary.boot.active = ctypes.pointer(boot_active)
+    if img_active is not None:
+        summary.img.active = ctypes.pointer(img_active)
+    if img_inactive is not None:
+        summary.img.inactive = ctypes.pointer(img_inactive)
+    if cfg_active is not None:
+        summary.cfg.active = ctypes.pointer(cfg_active)
+    return summary
+
+
 class TestFirmwareManagerGetPartSummary:
-    def test_get_part_summary(self, device, mock_library) -> None:
+    def test_get_part_summary_null_fallback(self, device, mock_library) -> None:
+        """When C returns NULL, falls back to boot-RO-only summary."""
+        mock_library.switchtec_fw_part_summary.return_value = None
         mock_library.switchtec_fw_is_boot_ro.return_value = 1
         fw = FirmwareManager(device)
         summary = fw.get_part_summary()
         assert isinstance(summary, FwPartSummary)
         assert summary.is_boot_ro is True
+        assert summary.boot.active is None
 
-    def test_get_part_summary_not_ro(self, device, mock_library) -> None:
+    def test_get_part_summary_null_not_ro(self, device, mock_library) -> None:
+        """NULL return with boot not RO."""
+        mock_library.switchtec_fw_part_summary.return_value = None
         mock_library.switchtec_fw_is_boot_ro.return_value = 0
         fw = FirmwareManager(device)
         summary = fw.get_part_summary()
@@ -120,6 +176,66 @@ class TestFirmwareManagerGetPartSummary:
         assert summary.is_boot_ro is False
         assert summary.boot.active is None
         assert summary.boot.inactive is None
+
+    def test_get_part_summary_full(self, device, mock_library) -> None:
+        """Full partition summary with real ctypes structs."""
+        boot_img = _make_image_info(
+            fw_type=FwType.BOOT, version=b"1.00", read_only=True,
+        )
+        img_active = _make_image_info(
+            fw_type=FwType.IMG, version=b"4.40", active=True, running=True,
+        )
+        img_inactive = _make_image_info(
+            fw_type=FwType.IMG, version=b"4.30", active=False,
+        )
+        cfg_img = _make_image_info(
+            fw_type=FwType.CFG, version=b"1.10",
+        )
+
+        # Keep reference alive so ctypes pointers stay valid
+        summary_struct = _make_part_summary_ptr(
+            boot_active=boot_img,
+            img_active=img_active,
+            img_inactive=img_inactive,
+            cfg_active=cfg_img,
+        )
+        mock_library.switchtec_fw_part_summary.return_value = ctypes.addressof(
+            summary_struct
+        )
+        mock_library.switchtec_fw_is_boot_ro.return_value = 1
+
+        fw = FirmwareManager(device)
+        summary = fw.get_part_summary()
+
+        assert summary.is_boot_ro is True
+
+        # Boot partition
+        assert summary.boot.active is not None
+        assert summary.boot.active.version == "1.00"
+        assert summary.boot.active.read_only is True
+        assert summary.boot.active.generation == "GEN4"
+        assert summary.boot.active.partition_type == "BOOT"
+        assert summary.boot.inactive is None
+
+        # IMG partition
+        assert summary.img.active is not None
+        assert summary.img.active.version == "4.40"
+        assert summary.img.active.running is True
+        assert summary.img.inactive is not None
+        assert summary.img.inactive.version == "4.30"
+        assert summary.img.inactive.active is False
+
+        # CFG partition
+        assert summary.cfg.active is not None
+        assert summary.cfg.active.version == "1.10"
+
+        # Empty partitions
+        assert summary.map.active is None
+        assert summary.nvlog.active is None
+        assert summary.seeprom.active is None
+
+        # Verify free was called
+        mock_library.switchtec_fw_part_summary_free.assert_called_once()
 
 
 class TestFirmwareManagerErrorPaths:

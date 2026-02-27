@@ -513,6 +513,67 @@ class TestGetStatusWithPorts:
         mock_library.switchtec_status_free.assert_called_once()
 
 
+class TestSwitchtecDeviceHardReset:
+    """Tests for hard_reset() method."""
+
+    def test_hard_reset_calls_lib(self, device, mock_library):
+        """hard_reset should call switchtec_hard_reset with the device handle."""
+        device.hard_reset()
+        mock_library.switchtec_hard_reset.assert_called_once_with(0xDEADBEEF)
+
+    def test_hard_reset_raises_on_error(
+        self, device, mock_library, monkeypatch
+    ):
+        """hard_reset should raise SwitchtecError when the library returns -1."""
+        mock_library.switchtec_hard_reset.return_value = -1
+        monkeypatch.setattr(ctypes, "get_errno", lambda: 0)
+        with pytest.raises(SwitchtecError):
+            device.hard_reset()
+
+    def test_hard_reset_succeeds_on_zero_return(self, device, mock_library):
+        """hard_reset should not raise when the library returns 0."""
+        mock_library.switchtec_hard_reset.return_value = 0
+        device.hard_reset()  # Should not raise
+
+
+class TestSwitchtecDeviceOsaProperty:
+    """Tests for the osa lazy property."""
+
+    def test_osa_property_returns_ordered_set_analyzer(
+        self, device, mock_library
+    ):
+        """The osa property should return an OrderedSetAnalyzer instance."""
+        from serialcables_switchtec.core.osa import OrderedSetAnalyzer
+
+        osa = device.osa
+        assert isinstance(osa, OrderedSetAnalyzer)
+
+    def test_osa_property_cached(self, device, mock_library):
+        """The osa property should return the same instance on repeated access."""
+        osa1 = device.osa
+        osa2 = device.osa
+        assert osa1 is osa2
+
+
+class TestSwitchtecDeviceEvcntrProperty:
+    """Tests for the evcntr lazy property."""
+
+    def test_evcntr_property_returns_event_counter_manager(
+        self, device, mock_library
+    ):
+        """The evcntr property should return an EventCounterManager instance."""
+        from serialcables_switchtec.core.evcntr import EventCounterManager
+
+        evcntr = device.evcntr
+        assert isinstance(evcntr, EventCounterManager)
+
+    def test_evcntr_property_cached(self, device, mock_library):
+        """The evcntr property should return the same instance on repeated access."""
+        evcntr1 = device.evcntr
+        evcntr2 = device.evcntr
+        assert evcntr1 is evcntr2
+
+
 class TestGetSummary:
     """Tests for get_summary() (lines 316-317)."""
 

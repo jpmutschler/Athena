@@ -8,7 +8,7 @@
 <!-- [![CI](https://github.com/serialcables/serialcables-switchtec/actions/workflows/ci.yml/badge.svg)](https://github.com/serialcables/serialcables-switchtec/actions) -->
 <!-- [![Coverage](https://img.shields.io/codecov/c/github/serialcables/serialcables-switchtec.svg)](https://codecov.io/gh/serialcables/serialcables-switchtec) -->
 
-**Athena** is a Python-friendly interface to the Microsemi/Microchip Switchtec PCIe switch management library (`switchtec-user` 4.4-rc2, 200+ API functions). Built for **PCIe Validation Engineers** who perform eye diagrams, LTSSM analysis, loopback testing, pattern generation and monitoring, error injection, and receiver characterization.
+**Athena** is a Python-friendly interface to the Serial Cables Gen6 PCIe Switchtec Host Card (`switchtec-user` 4.4-rc2, 200+ API functions). Built for **PCIe Validation Engineers** who perform eye diagrams, LTSSM analysis, loopback testing, pattern generation and monitoring, error injection, receiver characterization, firmware management, and performance monitoring.
 
 Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of PCIe test equipment and interposer solutions.
 
@@ -19,6 +19,7 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 - [Features](#features)
 - [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
+- [Building the C Library](#building-the-c-library)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [CLI Reference](#cli-reference)
@@ -37,9 +38,9 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 
 **ctypes Bindings Layer** -- Zero-dependency wrapping of the Switchtec C shared library with platform-aware loading (Linux `.so`, Windows `.dll`). Provides typed function prototypes, C struct definitions, and IntEnum constants mapped directly from C headers.
 
-**Click CLI** (`athena`) -- Full-featured command-line interface with human-readable output, `--json-output` mode for scripting, and `--debug` logging. Covers device discovery, port status, diagnostics, and error injection.
+**Click CLI** (`athena`) -- Full-featured command-line interface with human-readable output, `--json-output` mode for scripting, and `--debug` logging. Covers device discovery, port status, diagnostics, error injection, firmware management, events, fabric topology, and performance monitoring.
 
-**FastAPI REST API** -- Async HTTP API with auto-generated OpenAPI documentation, API key authentication, input validation via Pydantic, WebSocket support for streaming diagnostics, and restricted CORS.
+**FastAPI REST API** -- HTTP API with auto-generated OpenAPI documentation, API key authentication, input validation via Pydantic, WebSocket support for streaming diagnostics, and restricted CORS.
 
 **NiceGUI Browser Dashboard** -- Dark-themed browser UI with Serial Cables branding. Provides real-time device cards, port grids, eye diagram charts, LTSSM timeline visualization, and performance monitoring.
 
@@ -47,7 +48,7 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 
 | Capability | Description |
 |---|---|
-| Eye Diagrams | BER eye capture with configurable step size and lane selection |
+| Eye Diagrams | BER eye capture with configurable step size, lane selection, fetch, and cancel |
 | LTSSM Analysis | State machine log capture, decode, and clear (Gen3/4/5/6 tables) |
 | Loopback Testing | RX-to-TX, TX-to-RX, LTSSM, and PIPE loopback modes |
 | Pattern Gen/Mon | PRBS7/9/11/15/23/31 pattern generation and bit-error monitoring |
@@ -57,7 +58,15 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 | Cross-Hair Analysis | Per-lane eye limit measurement with enable/disable/get control |
 | Ordered Set Analysis | Type/pattern configuration and capture control |
 
-**Security** -- API key authentication via `SWITCHTEC_API_KEY` environment variable, localhost-only binding by default, restricted CORS origins, and Pydantic input validation on all API endpoints.
+**Firmware Management** -- Read firmware data, write firmware images with progress callbacks, toggle active partitions, query/set boot read-only status, and view partition summaries.
+
+**Events** -- Query event summary counts, clear all events, and wait for events with configurable timeouts.
+
+**Fabric Topology** (PAX devices) -- Port enable/disable/hot-reset, port configuration, GFMS bind/unbind, and event clearing.
+
+**Performance Monitoring** -- Bandwidth counters per port (egress/ingress posted, completion, non-posted) and latency measurement between port pairs.
+
+**Security** -- API key authentication via `SWITCHTEC_API_KEY` environment variable with constant-time comparison (`hmac.compare_digest`), localhost-only binding by default, restricted CORS origins, Pydantic input validation on all API endpoints, firmware upload size limits (64 MB), and port/lane ID range validation throughout CLI and API.
 
 ---
 
@@ -78,9 +87,9 @@ NiceGUI Dashboard / Click CLI
 Each layer has a single responsibility:
 
 - **CLI / UI** -- User-facing interfaces. The CLI outputs human-readable text or JSON. The dashboard renders live charts and tables.
-- **REST API** -- Stateless HTTP endpoints with an async device registry, input validation, and structured error responses.
-- **Core Domain** -- Business logic classes (`SwitchtecDevice`, `DiagnosticsManager`, `ErrorInjector`, `OrderedSetAnalyzer`, `PerformanceMonitor`) that wrap C library calls and return immutable Pydantic models.
-- **Bindings** -- Platform-aware CDLL loader, ctypes `Structure` definitions matching C structs, function prototypes with `argtypes`/`restype`, and IntEnum constants from C headers.
+- **REST API** -- Stateless HTTP endpoints with an async device registry, input validation, and structured error responses. Shared dependencies (device lookup, constants) are centralized in `api/dependencies.py`.
+- **Core Domain** -- Business logic classes (`SwitchtecDevice`, `DiagnosticsManager`, `ErrorInjector`, `FirmwareManager`, `EventManager`, `FabricManager`, `PerformanceManager`, `OrderedSetAnalyzer`) that wrap C library calls and return immutable Pydantic models. Managers are accessible as lazy properties on the device (e.g., `dev.diagnostics`, `dev.firmware`, `dev.performance`).
+- **Bindings** -- Platform-aware CDLL loader, ctypes `Structure` definitions matching C structs (`_pack_ = 1` for MRPC structs), function prototypes with `argtypes`/`restype`, and IntEnum constants from C headers.
 
 ---
 
@@ -96,21 +105,12 @@ This package wraps the [Microchip switchtec-user](https://github.com/Microsemi/s
 
 The library loader searches the following locations in order:
 
-1. `vendor/switchtec/` relative to the package installation (vendored build)
-2. The path specified by the `SWITCHTEC_LIB_DIR` environment variable
+1. `SWITCHTEC_LIB_DIR` environment variable (explicit override)
+2. `vendor/switchtec/lib/` relative to the package installation (vendored build from `scripts/build_lib.py`)
 3. System library paths (`/usr/local/lib`, `/usr/lib`, `/usr/lib64`, `/opt/switchtec/lib`)
 4. System `LD_LIBRARY_PATH` / `PATH` fallback
 
-**Building from source (Linux):**
-
-```bash
-git clone https://github.com/Microsemi/switchtec-user.git
-cd switchtec-user
-git checkout v4.4-rc2
-./configure --prefix=/usr/local
-make
-sudo make install
-```
+See [Building the C Library](#building-the-c-library) for automated build instructions.
 
 **Using a custom path:**
 
@@ -121,6 +121,70 @@ export SWITCHTEC_LIB_DIR=/path/to/your/built/lib
 ### Hardware
 
 A Microsemi/Microchip Switchtec PCIe switch device must be accessible at a device path such as `/dev/switchtec0` (Linux) or `\\.\switchtec0` (Windows). Appropriate permissions or elevated access may be required.
+
+---
+
+## Building the C Library
+
+The C source is included at `resources/switchtec-user-4.4-rc2/`. A cross-platform build script is provided.
+
+### Quick Start
+
+```bash
+python scripts/build_lib.py
+```
+
+This will compile the library and place it at `vendor/switchtec/lib/switchtec.dll` (Windows) or `vendor/switchtec/lib/libswitchtec.so` (Linux).
+
+### Windows (MSYS2/MinGW)
+
+The C code uses GCC-specific extensions (`__builtin_bswap*`, inline asm, `__builtin_ffs`) that are not compatible with MSVC. MSYS2/MinGW is required.
+
+1. **Install MSYS2** (if not already installed):
+
+   ```powershell
+   .\scripts\setup_msys2.ps1
+   ```
+
+   This downloads and installs MSYS2 to `C:\msys64` with the MinGW64 toolchain (`gcc`, `make`, `autotools`).
+
+2. **Build the library:**
+
+   ```bash
+   python scripts/build_lib.py
+   ```
+
+   The script locates MSYS2, runs `./configure && make` inside the MinGW shell, and copies the output to `vendor/switchtec/lib/switchtec.dll`.
+
+### Linux
+
+GCC and standard build tools (`make`, `autoconf`, `automake`, `libtool`) must be installed.
+
+```bash
+# Install build dependencies (Debian/Ubuntu)
+sudo apt install build-essential autoconf automake libtool
+
+# Build
+python scripts/build_lib.py
+```
+
+### Manual Build
+
+```bash
+cd resources/switchtec-user-4.4-rc2
+./configure
+make
+
+# Copy library to vendor location
+cp lib/.libs/libswitchtec.so ../../vendor/switchtec/lib/       # Linux
+cp lib/.libs/switchtec-0.dll ../../vendor/switchtec/lib/switchtec.dll  # Windows/MinGW
+```
+
+### Verification
+
+```bash
+python -c "from serialcables_switchtec.bindings.library import load_library; load_library(); print('OK')"
+```
 
 ---
 
@@ -258,7 +322,14 @@ Port status output:
 **Eye diagram:**
 
 ```bash
+# Start eye diagram capture
 athena diag eye /dev/switchtec0 --lanes 1,0,0,0 --x-step 1 --y-step 2
+
+# Fetch eye diagram data from an in-progress capture
+athena diag eye-fetch /dev/switchtec0 --pixels 4096
+
+# Cancel eye diagram capture
+athena diag eye-cancel /dev/switchtec0
 ```
 
 **LTSSM log:**
@@ -320,7 +391,7 @@ athena diag crosshair /dev/switchtec0 --action disable
 
 ### Error Injection Commands
 
-All error injection commands are under `athena diag inject`.
+All error injection commands are under `athena diag inject`. Port IDs are validated to the range 0-59.
 
 ```bash
 # Inject a raw DLLP on port 0
@@ -342,6 +413,82 @@ athena diag inject ack-nack /dev/switchtec0 0 --seq-num 42 --count 5
 athena diag inject cto /dev/switchtec0 0
 ```
 
+### Firmware Commands
+
+```bash
+# Show firmware version
+athena fw version /dev/switchtec0
+
+# Show firmware partition summary
+athena fw summary /dev/switchtec0
+
+# Read raw firmware data at address
+athena fw read /dev/switchtec0 --address 0x1000 --length 256
+
+# Write a firmware image (with progress display)
+athena fw write /dev/switchtec0 firmware.bin
+
+# Write without activating
+athena fw write /dev/switchtec0 firmware.bin --no-activate
+
+# Toggle active firmware partition
+athena fw toggle /dev/switchtec0 --fw --cfg
+
+# Show/set boot partition read-only status
+athena fw boot-ro /dev/switchtec0
+athena fw boot-ro /dev/switchtec0 --set
+athena fw boot-ro /dev/switchtec0 --clear
+```
+
+### Event Commands
+
+```bash
+# Show event summary counts
+athena events summary /dev/switchtec0
+
+# Clear all events
+athena events clear /dev/switchtec0
+
+# Wait for an event (with optional timeout)
+athena events wait /dev/switchtec0 --timeout 5000
+```
+
+### Fabric Commands (PAX Devices)
+
+```bash
+# Enable/disable/hot-reset a fabric port
+athena fabric port-control /dev/switchtec0 --port 4 --action enable
+athena fabric port-control /dev/switchtec0 --port 4 --action hot-reset --hot-reset-flag perst
+
+# Get fabric port configuration
+athena fabric port-config /dev/switchtec0 --port 4
+
+# Bind a host port to an endpoint port
+athena fabric bind /dev/switchtec0 \
+    --host-sw-idx 0 --host-phys-port 0 --host-log-port 0 \
+    --ep-sw-idx 0 --ep-phys-port 4
+
+# Unbind
+athena fabric unbind /dev/switchtec0 \
+    --host-sw-idx 0 --host-phys-port 0 --host-log-port 0
+
+# Clear GFMS events
+athena fabric clear-events /dev/switchtec0
+```
+
+### Performance Commands
+
+```bash
+# Get bandwidth counters for ports 0, 1, and 4
+athena perf bw /dev/switchtec0 --ports 0,1,4
+
+# Configure latency measurement between egress port 0 and ingress port 4
+athena perf latency-setup /dev/switchtec0 --egress 0 --ingress 4
+
+# Read latency measurement
+athena perf latency /dev/switchtec0 --egress 0
+```
+
 ### Server Command
 
 ```bash
@@ -360,7 +507,7 @@ The REST API is a FastAPI application with auto-generated OpenAPI documentation 
 
 ### Authentication
 
-Set the `SWITCHTEC_API_KEY` environment variable before starting the server. All API requests must include the key in the `X-API-Key` header.
+Set the `SWITCHTEC_API_KEY` environment variable before starting the server. All API requests must include the key in the `X-API-Key` header. The key is verified using `hmac.compare_digest` to prevent timing attacks.
 
 ```bash
 export SWITCHTEC_API_KEY="your-secret-key"
@@ -373,17 +520,79 @@ curl -H "X-API-Key: your-secret-key" http://127.0.0.1:8000/api/devices/
 
 ### Endpoints
 
+**Device Management:**
+
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/health` | Health check (no auth required) |
 | `GET` | `/api/devices/` | List managed device sessions |
+| `GET` | `/api/devices/discover` | Discover available Switchtec devices |
 | `POST` | `/api/devices/{id}/open` | Open a device by path |
 | `DELETE` | `/api/devices/{id}` | Close a device session |
+| `GET` | `/api/devices/{id}` | Get device summary info |
 | `GET` | `/api/devices/{id}/temperature` | Read die temperature |
 | `GET` | `/api/devices/{id}/ports` | List port status |
+| `GET` | `/api/devices/{id}/ports/{port}/pff` | Get PFF index for a port |
+
+**Diagnostics:**
+
+| Method | Path | Description |
+|---|---|---|
 | `POST` | `/api/devices/{id}/diag/eye/start` | Start eye diagram capture |
-| `GET` | `/api/devices/{id}/diag/ltssm` | Dump LTSSM state log |
-| `POST` | `/api/devices/{id}/diag/inject/dllp` | Inject DLLP error |
+| `GET` | `/api/devices/{id}/diag/eye/fetch` | Fetch eye diagram data |
+| `POST` | `/api/devices/{id}/diag/eye/cancel` | Cancel eye diagram capture |
+| `GET` | `/api/devices/{id}/diag/ltssm/{port}` | Get LTSSM state log |
+| `DELETE` | `/api/devices/{id}/diag/ltssm/{port}` | Clear LTSSM log |
+| `GET` | `/api/devices/{id}/diag/loopback/{port}` | Get loopback status |
+| `POST` | `/api/devices/{id}/diag/loopback/{port}` | Set loopback mode |
+| `POST` | `/api/devices/{id}/diag/patgen/{port}` | Set pattern generator |
+| `GET` | `/api/devices/{id}/diag/patmon/{port}/{lane}` | Get pattern monitor results |
+| `POST` | `/api/devices/{id}/diag/inject/dllp/{port}` | Inject DLLP |
+| `POST` | `/api/devices/{id}/diag/inject/dllp-crc/{port}` | DLLP CRC error injection |
+| `POST` | `/api/devices/{id}/diag/inject/cto/{port}` | Inject completion timeout |
+| `GET` | `/api/devices/{id}/diag/rcvr/{port}/{lane}` | Dump receiver object |
+| `GET` | `/api/devices/{id}/diag/eq/{port}` | Get port EQ TX coefficients |
+| `POST` | `/api/devices/{id}/diag/crosshair/enable/{lane}` | Enable cross-hair |
+| `POST` | `/api/devices/{id}/diag/crosshair/disable` | Disable cross-hair |
+| `GET` | `/api/devices/{id}/diag/crosshair` | Get cross-hair results |
+
+**Firmware:**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/devices/{id}/firmware/version` | Get firmware version |
+| `GET` | `/api/devices/{id}/firmware/summary` | Get partition summary |
+| `GET` | `/api/devices/{id}/firmware/boot-ro` | Check boot RO status |
+| `POST` | `/api/devices/{id}/firmware/boot-ro` | Set boot RO flag |
+| `POST` | `/api/devices/{id}/firmware/toggle` | Toggle active partition |
+| `POST` | `/api/devices/{id}/firmware/write` | Write firmware (multipart, 64 MB limit) |
+
+**Events:**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/devices/{id}/events/summary` | Get event summary |
+| `POST` | `/api/devices/{id}/events/clear` | Clear all events |
+| `POST` | `/api/devices/{id}/events/wait` | Wait for event |
+
+**Fabric:**
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/devices/{id}/fabric/port-control` | Enable/disable/hot-reset port |
+| `GET` | `/api/devices/{id}/fabric/port-config/{port}` | Get port configuration |
+| `POST` | `/api/devices/{id}/fabric/port-config/{port}` | Set port configuration |
+| `POST` | `/api/devices/{id}/fabric/bind` | GFMS bind |
+| `POST` | `/api/devices/{id}/fabric/unbind` | GFMS unbind |
+| `POST` | `/api/devices/{id}/fabric/clear-events` | Clear GFMS events |
+
+**Performance:**
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/devices/{id}/perf/bw` | Get bandwidth counters |
+| `POST` | `/api/devices/{id}/perf/latency/setup` | Configure latency measurement |
+| `GET` | `/api/devices/{id}/perf/latency/{port}` | Get latency measurement |
 
 All endpoints return JSON. Error responses follow a consistent structure:
 
@@ -456,7 +665,6 @@ for d in devices:
 
 ```python
 from serialcables_switchtec.core.device import SwitchtecDevice
-from serialcables_switchtec.core.diagnostics import DiagnosticsManager
 from serialcables_switchtec.bindings.constants import (
     DiagPattern,
     DiagPatternLinkRate,
@@ -464,10 +672,17 @@ from serialcables_switchtec.bindings.constants import (
 )
 
 with SwitchtecDevice.open("/dev/switchtec0") as dev:
-    diag = DiagnosticsManager(dev)
+    diag = dev.diagnostics  # Lazy-initialized DiagnosticsManager
 
     # Start an eye diagram capture
     diag.eye_start(lane_mask=[1, 0, 0, 0], x_step=1, y_step=2)
+
+    # Fetch eye diagram data
+    eye_data = diag.eye_fetch(pixel_count=4096)
+    print(f"Lane {eye_data.lane_id}: {len(eye_data.pixels)} pixels")
+
+    # Cancel capture
+    diag.eye_cancel()
 
     # Dump LTSSM log for port 0
     for entry in diag.ltssm_log(port_id=0):
@@ -506,6 +721,96 @@ with SwitchtecDevice.open("/dev/switchtec0") as dev:
 
     # Inject completion timeout
     injector.inject_cto(port_id=0)
+```
+
+### Firmware Management
+
+```python
+from serialcables_switchtec.core.device import SwitchtecDevice
+
+with SwitchtecDevice.open("/dev/switchtec0") as dev:
+    fw = dev.firmware  # Lazy-initialized FirmwareManager
+
+    # Get firmware version
+    print(f"FW Version: {fw.get_fw_version()}")
+
+    # Check boot read-only status
+    print(f"Boot RO: {fw.is_boot_ro()}")
+
+    # Get partition summary
+    summary = fw.get_part_summary()
+
+    # Write firmware image with progress callback
+    def progress(cur: int, tot: int) -> None:
+        print(f"\rProgress: {cur * 100 // tot}%", end="")
+
+    fw.write_firmware("firmware.bin", progress_callback=progress)
+    print("\nDone")
+
+    # Toggle active partition
+    fw.toggle_active_partition(toggle_fw=True, toggle_cfg=True)
+```
+
+### Events
+
+```python
+from serialcables_switchtec.core.device import SwitchtecDevice
+
+with SwitchtecDevice.open("/dev/switchtec0") as dev:
+    events = dev.events  # Lazy-initialized EventManager
+
+    # Get event summary
+    summary = events.get_summary()
+    print(f"Total events: {summary.total_count}")
+
+    # Clear all events
+    events.clear_all()
+
+    # Wait for an event (5 second timeout)
+    events.wait_for_event(timeout_ms=5000)
+```
+
+### Fabric Topology (PAX Devices)
+
+```python
+from serialcables_switchtec.core.device import SwitchtecDevice
+from serialcables_switchtec.models.fabric import GfmsBindRequest
+
+with SwitchtecDevice.open("/dev/switchtec0") as dev:
+    fab = dev.fabric  # Lazy-initialized FabricManager
+
+    # Get port configuration
+    config = fab.get_port_config(port_id=4)
+    print(f"Port type: {config.port_type}")
+
+    # Bind host to endpoint
+    req = GfmsBindRequest(
+        host_sw_idx=0,
+        host_phys_port_id=0,
+        host_log_port_id=0,
+        ep_sw_idx=0,
+        ep_phys_port_id=4,
+    )
+    fab.bind(req)
+```
+
+### Performance Monitoring
+
+```python
+from serialcables_switchtec.core.device import SwitchtecDevice
+
+with SwitchtecDevice.open("/dev/switchtec0") as dev:
+    perf = dev.performance  # Lazy-initialized PerformanceManager
+
+    # Get bandwidth counters for ports 0 and 4
+    results = perf.bw_get([0, 4])
+    for r in results:
+        print(f"Egress total: {r.egress.total}  Ingress total: {r.ingress.total}")
+
+    # Configure and read latency
+    perf.lat_setup(egress_port_id=0, ingress_port_id=4)
+    lat = perf.lat_get(egress_port_id=0)
+    print(f"Latency: current={lat.current_ns} ns  max={lat.max_ns} ns")
 ```
 
 ### Error Handling
@@ -555,42 +860,64 @@ SwitchtecError
 ## Project Structure
 
 ```
+scripts/
+|-- setup_msys2.ps1            # MSYS2/MinGW installer for Windows
++-- build_lib.py               # Cross-platform C library build script
+
+vendor/switchtec/lib/          # Built shared library output directory
+
+resources/switchtec-user-4.4-rc2/  # C library source
+
 src/serialcables_switchtec/
 |-- __init__.py                 # Package entry point, exports SwitchtecError
 |-- exceptions.py               # Exception hierarchy with errno/MRPC mapping
 |
 |-- bindings/                   # ctypes interface to libswitchtec
-|   |-- library.py              # Platform-aware CDLL loader
+|   |-- library.py              # Platform-aware CDLL loader (env, vendor, system)
 |   |-- constants.py            # IntEnums from C headers (Gen, Variant, LTSSM, patterns)
 |   |-- types.py                # ctypes Structure definitions matching C structs
 |   +-- functions.py            # Function prototypes (argtypes/restype)
 |
 |-- core/                       # Business logic wrapping C library calls
-|   |-- device.py               # SwitchtecDevice: open/close/list/status/temp/fw_version
+|   |-- device.py               # SwitchtecDevice: open/close/list/status/temp + lazy managers
 |   |-- diagnostics.py          # DiagnosticsManager: eye, LTSSM, loopback, pattern, EQ
 |   |-- error_injection.py      # ErrorInjector: DLLP, TLP LCRC, seq num, ACK/NACK, CTO
+|   |-- firmware.py             # FirmwareManager: version, read, write, toggle, boot-ro
+|   |-- events.py               # EventManager: summary, clear, wait
+|   |-- fabric.py               # FabricManager: port control/config, bind/unbind, events
 |   |-- osa.py                  # OrderedSetAnalyzer: type/pattern config, capture control
-|   +-- performance.py          # PerformanceMonitor: bandwidth counters, latency
+|   +-- performance.py          # PerformanceManager: bandwidth counters, latency
 |
 |-- models/                     # Pydantic models (frozen, immutable)
 |   |-- device.py               # DeviceInfo, PortId, PortStatus, DeviceSummary
 |   |-- diagnostics.py          # EyeData, LtssmLogEntry, CrossHairResult, ReceiverObject
 |   |-- performance.py          # BwCounterResult, LatencyResult, EventCounterResult
-|   +-- firmware.py             # FwImageInfo, FwPartSummary
+|   |-- firmware.py             # FwImageInfo, FwPartSummary
+|   |-- events.py               # EventSummaryResult
+|   +-- fabric.py               # FabPortConfig, GfmsBindRequest, GfmsUnbindRequest
 |
 |-- cli/                        # Click command-line interface
 |   |-- main.py                 # Root group (--debug, --json-output, --version), serve
 |   |-- device.py               # list, info, temp, status
-|   +-- diag.py                 # eye, ltssm, loopback, patgen, patmon, inject, rcvr, eq
+|   |-- diag.py                 # eye, eye-fetch, eye-cancel, ltssm, loopback, patgen, patmon, inject, rcvr, eq, crosshair
+|   |-- firmware.py             # version, summary, read, write, toggle, boot-ro
+|   |-- events.py               # summary, clear, wait
+|   |-- fabric.py               # port-control, port-config, bind, unbind, clear-events
+|   +-- perf.py                 # bw, latency-setup, latency
 |
 |-- api/                        # FastAPI REST + WebSocket API
 |   |-- app.py                  # Application factory, CORS, lifespan, auth
 |   |-- state.py                # Device registry, asyncio.Lock, API key auth
+|   |-- dependencies.py         # Shared helpers: get_device(), DEVICE_ID_PATTERN
 |   |-- error_handlers.py       # Exception-to-HTTP status mapping
 |   +-- routes/                 # Route modules
 |       |-- devices.py          # Device management endpoints
 |       |-- ports.py            # Port status endpoints
-|       +-- diagnostics.py      # Diagnostics endpoints
+|       |-- diagnostics.py      # Eye, LTSSM, loopback, pattern, injection, EQ, crosshair
+|       |-- firmware.py         # Firmware version, write, toggle, boot-ro, summary
+|       |-- events.py           # Event summary, clear, wait
+|       |-- fabric.py           # Fabric port control/config, bind/unbind, events
+|       +-- performance.py      # Bandwidth and latency endpoints
 |
 |-- ui/                         # NiceGUI browser dashboard
 |   |-- main.py                 # Page registration, static file serving
@@ -613,6 +940,11 @@ src/serialcables_switchtec/
 |
 +-- utils/
     +-- logging.py              # structlog configuration
+
+tests/
+|-- unit/                       # Unit tests (mocked C library calls)
+|-- integration/                # Integration tests
++-- e2e/                        # End-to-end CLI and API tests
 ```
 
 ---
@@ -650,7 +982,7 @@ pytest tests/ -v
 pytest tests/ -v --cov=serialcables_switchtec --cov-report=term-missing
 ```
 
-**Current status:** 91 tests (unit, integration, and end-to-end). Coverage is at 49%, primarily because the UI layer requires a NiceGUI runtime to test.
+**Current status:** 770 tests (unit, integration, and end-to-end). Coverage is at 84%. The UI layer requires a NiceGUI runtime and is not covered by automated tests.
 
 ---
 
@@ -665,7 +997,10 @@ This project is under active development. The current version is **0.1.0**.
 | Phase 3 | CLI -- Click commands, JSON output, human-readable formatting | Complete |
 | Phase 4 | REST API -- FastAPI endpoints, auth, WebSocket, error handling | Complete |
 | Phase 5 | Browser UI -- NiceGUI dashboard, charts, dark theme | Complete |
-| Phase 6 | Extended -- performance counters, firmware management, events, fabric | Planned |
+| Phase 6 | Extended -- firmware management, events, fabric, performance | Complete |
+| Phase 7 | C Library Build System -- MSYS2/MinGW scripts, vendor directory | Complete |
+| Phase 8 | P0 Feature Gaps -- eye fetch, firmware write, performance CLI/API | Complete |
+| Phase 9 | Code Quality -- shared dependencies, input validation, dead code removal | Complete |
 
 ---
 

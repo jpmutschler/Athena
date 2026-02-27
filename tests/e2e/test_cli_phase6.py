@@ -663,19 +663,140 @@ class TestFabricCommands:
         assert parsed["phys_port_id"] == 2
         assert parsed["clock_source"] == 1
 
-    @patch("serialcables_switchtec.cli.fabric.SwitchtecDevice")
-    def test_fabric_port_config_error(self, mock_cls: MagicMock) -> None:
-        mock_dev = _make_mock_device()
-        mock_dev.fabric.get_port_config.side_effect = SwitchtecError("invalid port")
-        mock_cls.open.return_value = mock_dev
-
+    def test_fabric_port_config_error(self) -> None:
         runner = CliRunner()
         result = runner.invoke(
             cli, ["fabric", "port-config", "/dev/switchtec0", "--port", "99"]
         )
 
         assert result.exit_code != 0
-        assert "invalid port" in result.output
+        assert "not in the range" in result.output
+
+    # -- fabric port validation (P2) ----------------------------------------
+
+    def test_fabric_port_control_rejects_port_60(self) -> None:
+        """Port 60 is out of range (max is 59)."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "fabric", "port-control", "/dev/switchtec0",
+                "--port", "60", "--action", "enable",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "not in the range" in result.output
+
+    def test_fabric_port_control_rejects_negative_port(self) -> None:
+        """Negative port IDs should be rejected."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "fabric", "port-control", "/dev/switchtec0",
+                "--port", "-1", "--action", "enable",
+            ],
+        )
+        assert result.exit_code != 0
+
+    def test_fabric_port_config_rejects_port_60(self) -> None:
+        """Port 60 is out of range for port-config (max is 59)."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["fabric", "port-config", "/dev/switchtec0", "--port", "60"],
+        )
+        assert result.exit_code != 0
+        assert "not in the range" in result.output
+
+    def test_fabric_port_config_rejects_negative_port(self) -> None:
+        """Negative port IDs should be rejected for port-config."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["fabric", "port-config", "/dev/switchtec0", "--port", "-1"],
+        )
+        assert result.exit_code != 0
+
+    @patch("serialcables_switchtec.cli.fabric.SwitchtecDevice")
+    def test_fabric_port_control_accepts_port_0(
+        self, mock_cls: MagicMock
+    ) -> None:
+        """Port 0 is the minimum valid value."""
+        mock_dev = _make_mock_device()
+        mock_cls.open.return_value = mock_dev
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "fabric", "port-control", "/dev/switchtec0",
+                "--port", "0", "--action", "enable",
+            ],
+        )
+        assert result.exit_code == 0
+
+    @patch("serialcables_switchtec.cli.fabric.SwitchtecDevice")
+    def test_fabric_port_control_accepts_port_59(
+        self, mock_cls: MagicMock
+    ) -> None:
+        """Port 59 is the maximum valid value."""
+        mock_dev = _make_mock_device()
+        mock_cls.open.return_value = mock_dev
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "fabric", "port-control", "/dev/switchtec0",
+                "--port", "59", "--action", "enable",
+            ],
+        )
+        assert result.exit_code == 0
+
+    def test_fabric_bind_rejects_host_phys_port_60(self) -> None:
+        """Host physical port 60 is out of range for bind (max is 59)."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "fabric", "bind", "/dev/switchtec0",
+                "--host-sw-idx", "0",
+                "--host-phys-port", "60",
+                "--host-log-port", "0",
+                "--ep-sw-idx", "0",
+                "--ep-phys-port", "0",
+            ],
+        )
+        assert result.exit_code != 0
+
+    def test_fabric_bind_rejects_ep_phys_port_60(self) -> None:
+        """Endpoint physical port 60 is out of range for bind (max is 59)."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "fabric", "bind", "/dev/switchtec0",
+                "--host-sw-idx", "0",
+                "--host-phys-port", "0",
+                "--host-log-port", "0",
+                "--ep-sw-idx", "0",
+                "--ep-phys-port", "60",
+            ],
+        )
+        assert result.exit_code != 0
+
+    def test_fabric_unbind_rejects_host_phys_port_60(self) -> None:
+        """Host physical port 60 is out of range for unbind (max is 59)."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "fabric", "unbind", "/dev/switchtec0",
+                "--host-sw-idx", "0",
+                "--host-phys-port", "60",
+                "--host-log-port", "0",
+            ],
+        )
+        assert result.exit_code != 0
 
     # -- fabric bind --------------------------------------------------------
 

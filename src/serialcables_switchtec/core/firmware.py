@@ -3,10 +3,22 @@
 from __future__ import annotations
 
 import ctypes
+import os
+from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from serialcables_switchtec.bindings.constants import FwType, SwitchtecGen
+from serialcables_switchtec.bindings.types import (
+    SwitchtecFwImageInfo,
+    SwitchtecFwPartSummary,
+)
 from serialcables_switchtec.exceptions import InvalidParameterError, check_error
-from serialcables_switchtec.models.firmware import FwPartSummary
+from serialcables_switchtec.models.firmware import (
+    FwImageInfo,
+    FwPartitionInfo,
+    FwPartSummary,
+)
 from serialcables_switchtec.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -15,6 +27,9 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 MAX_FW_READ_LENGTH = 16 * 1024 * 1024  # 16 MB
+
+# ctypes callback type for firmware write progress: void(int cur, int tot)
+_FwProgressCallback = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_int)
 
 
 class FirmwareManager:
@@ -114,15 +129,128 @@ class FirmwareManager:
         check_error(ret, "fw_read")
         return buf.raw
 
+    def write_firmware(
+        self,
+        image_path: str | Path,
+        *,
+        dont_activate: bool = False,
+        force: bool = False,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> None:
+        """Write a firmware image file to the device.
+
+        Args:
+            image_path: Path to the firmware image file.
+            dont_activate: If True, don't activate the new firmware after write.
+            force: If True, force write even if image appears incompatible.
+            progress_callback: Optional callback(current_bytes, total_bytes).
+
+        Raises:
+            InvalidParameterError: If the image file does not exist.
+        """
+        path = Path(image_path)
+        if not path.exists():
+            raise InvalidParameterError(f"Firmware image not found: {path}")
+
+        if progress_callback is not None:
+            c_callback = _FwProgressCallback(progress_callback)
+        else:
+            c_callback = _FwProgressCallback(lambda cur, tot: None)
+
+        fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        try:
+            ret = self._dev.lib.switchtec_fw_write_fd(
+                self._dev.handle,
+                fd,
+                int(dont_activate),
+                int(force),
+                c_callback,
+            )
+            check_error(ret, "fw_write")
+        finally:
+            os.close(fd)
+
+        logger.info(
+            "firmware_written",
+            image=str(path),
+            dont_activate=dont_activate,
+            force=force,
+        )
+
+    @staticmethod
+    def _gen_str(gen_val: int) -> str:
+        """Map C enum switchtec_gen value to a human-readable string."""
+        try:
+            return SwitchtecGen(gen_val).name
+        except ValueError:
+            return "UNKNOWN"
+
+    @staticmethod
+    def _type_str(type_val: int) -> str:
+        """Map C enum switchtec_fw_type value to a human-readable string."""
+        try:
+            return FwType(type_val).name
+        except ValueError:
+            return "UNKNOWN"
+
+    @staticmethod
+    def _read_image_info(ptr: ctypes.POINTER(SwitchtecFwImageInfo)) -> FwImageInfo | None:
+        """Dereference a pointer to SwitchtecFwImageInfo and return a Pydantic model.
+
+        Returns None if the pointer is NULL.
+        """
+        if not ptr:
+            return None
+        info = ptr.contents
+        return FwImageInfo(
+            generation=FirmwareManager._gen_str(info.gen),
+            partition_type=FirmwareManager._type_str(info.type),
+            version=info.version.decode("utf-8", errors="replace").rstrip("\x00"),
+            partition_addr=info.part_addr,
+            partition_len=info.part_len,
+            image_len=info.image_len,
+            valid=bool(info.valid),
+            active=bool(info.active),
+            running=bool(info.running),
+            read_only=bool(info.read_only),
+        )
+
+    @staticmethod
+    def _read_part_type(part_type) -> FwPartitionInfo:
+        """Read active/inactive pointers from a SwitchtecFwPartType."""
+        return FwPartitionInfo(
+            active=FirmwareManager._read_image_info(part_type.active),
+            inactive=FirmwareManager._read_image_info(part_type.inactive),
+        )
+
     def get_part_summary(self) -> FwPartSummary:
         """Get a summary of all firmware partitions.
 
-        Note: This is a simplified version. The full C struct
-        contains flexible array members that are complex to
-        marshal via ctypes. For now, we return the boot RO status.
+        Calls the C library's switchtec_fw_part_summary() to retrieve
+        full partition information including active/inactive images for
+        all 9 partition types.
 
         Returns:
-            FwPartSummary with boot read-only status populated.
+            FwPartSummary with all partition info populated.
         """
-        is_ro = self.is_boot_ro()
-        return FwPartSummary(is_boot_ro=is_ro)
+        raw_ptr = self._dev.lib.switchtec_fw_part_summary(self._dev.handle)
+        if not raw_ptr:
+            logger.warning("fw_part_summary returned NULL, falling back to boot-RO only")
+            return FwPartSummary(is_boot_ro=self.is_boot_ro())
+
+        try:
+            summary = ctypes.cast(raw_ptr, ctypes.POINTER(SwitchtecFwPartSummary)).contents
+            return FwPartSummary(
+                boot=self._read_part_type(summary.boot),
+                map=self._read_part_type(summary.map),
+                img=self._read_part_type(summary.img),
+                cfg=self._read_part_type(summary.cfg),
+                nvlog=self._read_part_type(summary.nvlog),
+                seeprom=self._read_part_type(summary.seeprom),
+                key=self._read_part_type(summary.key),
+                bl2=self._read_part_type(summary.bl2),
+                riot=self._read_part_type(summary.riot),
+                is_boot_ro=self.is_boot_ro(),
+            )
+        finally:
+            self._dev.lib.switchtec_fw_part_summary_free(raw_ptr)

@@ -78,6 +78,32 @@ def temp(ctx: click.Context, device_path: str) -> None:
         raise click.Abort()
 
 
+@device.command("hard-reset")
+@click.argument("device_path")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
+@click.pass_context
+def hard_reset(ctx: click.Context, device_path: str, yes: bool) -> None:
+    """Hard-reset the Switchtec device.
+
+    WARNING: This resets the switch chip and all connected PCIe devices.
+    """
+    if not yes:
+        click.confirm(
+            "This will hard-reset the switch and all connected devices. Continue?",
+            abort=True,
+        )
+    try:
+        with SwitchtecDevice.open(device_path) as dev:
+            dev.hard_reset()
+            if ctx.obj.get("json_output"):
+                click.echo(json.dumps({"status": "reset"}))
+            else:
+                click.echo("Hard reset initiated.")
+    except SwitchtecError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+
 @device.command()
 @click.argument("device_path")
 @click.pass_context

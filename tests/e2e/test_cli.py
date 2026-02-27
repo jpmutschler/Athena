@@ -526,15 +526,12 @@ class TestDiagCommands:
 
         assert result.exit_code == 0
 
-    @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_ltssm_error(self, mock_dev_cls):
-        mock_dev_cls.open.side_effect = SwitchtecError("port invalid")
-
+    def test_ltssm_error(self):
         runner = CliRunner()
         result = runner.invoke(cli, ["diag", "ltssm", "/dev/switchtec0", "99"])
 
         assert result.exit_code != 0
-        assert "port invalid" in result.output
+        assert "not in the range" in result.output
 
     # ── ltssm-clear ────────────────────────────────────────────────────
 

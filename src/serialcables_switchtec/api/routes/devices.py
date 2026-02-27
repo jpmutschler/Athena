@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Path
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
+from serialcables_switchtec.api.dependencies import DEVICE_ID_PATTERN
 from serialcables_switchtec.api.error_handlers import raise_on_error
 from serialcables_switchtec.api.state import (
     DEVICE_PATH_PATTERN,
@@ -19,7 +20,6 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
-_DEVICE_ID_PATTERN = r"^[a-zA-Z0-9_-]{1,64}$"
 
 
 class OpenDeviceRequest(BaseModel):
@@ -64,7 +64,7 @@ async def discover_devices() -> list[dict]:
     response_model=DeviceSummary,
 )
 async def open_device(
-    device_id: str = Path(pattern=_DEVICE_ID_PATTERN),
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     request: OpenDeviceRequest = ...,
 ) -> DeviceSummary:
     """Open a Switchtec device and add it to the registry."""
@@ -88,7 +88,7 @@ async def open_device(
 
 @router.delete("/{device_id}")
 async def close_device(
-    device_id: str = Path(pattern=_DEVICE_ID_PATTERN),
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> dict[str, str]:
     """Close an open device and remove it from the registry."""
     registry = get_device_registry()
@@ -114,7 +114,7 @@ async def close_device(
 
 @router.get("/{device_id}", response_model=DeviceSummary)
 async def get_device_info(
-    device_id: str = Path(pattern=_DEVICE_ID_PATTERN),
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> DeviceSummary:
     """Get summary information for an open device."""
     registry = get_device_registry()
@@ -131,9 +131,51 @@ async def get_device_info(
         raise_on_error(e, "get_device_info")
 
 
+class HardResetRequest(BaseModel):
+    confirm: bool = Field(
+        description="Must be true to confirm the hard reset operation.",
+    )
+
+
+@router.post("/{device_id}/hard-reset")
+async def hard_reset(
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
+    request: HardResetRequest = ...,
+) -> dict[str, str]:
+    """Hard-reset the Switchtec device.
+
+    WARNING: This resets the switch chip and all connected PCIe devices.
+    The device handle becomes invalid and the device is removed from the registry.
+    Requires ``confirm: true`` in the request body.
+    """
+    if not request.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Hard reset requires confirm=true in request body",
+        )
+
+    registry = get_device_registry()
+    lock = get_registry_lock()
+
+    async with lock:
+        entry = registry.pop(device_id, None)
+        if entry is None:
+            raise HTTPException(
+                status_code=404, detail=f"Device {device_id} not found"
+            )
+
+    dev, _path = entry
+    try:
+        dev.hard_reset()
+        dev._closed = True
+        return {"status": "reset", "device_id": device_id}
+    except Exception as e:
+        raise_on_error(e, "hard_reset")
+
+
 @router.get("/{device_id}/temperature")
 async def get_temperature(
-    device_id: str = Path(pattern=_DEVICE_ID_PATTERN),
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> dict[str, float]:
     """Get die temperature for an open device."""
     registry = get_device_registry()
