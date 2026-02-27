@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "serialcables-switchtec"
+name = "serialcables-athena"
 version = "0.1.0"
 description = "Serial Cables Gen6 PCIe Switchtec Host Card Management Interface"
 readme = "README.md"
@@ -25,7 +25,7 @@ ui = [
     "nicegui>=2.0",
 ]
 all = [
-    "serialcables-switchtec[api,ui]",
+    "serialcables-athena[api,ui]",
 ]
 dev = [
     "pytest>=7.4",
@@ -38,8 +38,20 @@ dev = [
 [project.scripts]
 athena = "serialcables_switchtec.cli.main:cli"
 
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/serialcables_switchtec"]
+artifacts = [
+    "src/serialcables_switchtec/_native/*.dll",
+    "src/serialcables_switchtec/_native/*.so",
+    "src/serialcables_switchtec/_native/*.so.*",
+    "src/serialcables_switchtec/_native/*.dylib",
+]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/", "resources/switchtec-user-4.4-rc2/", "scripts/", "tests/", "hatch_build.py", "pyproject.toml", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

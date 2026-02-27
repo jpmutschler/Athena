@@ -45,6 +45,33 @@ class TestFindLibraryPaths:
             f"Expected vendor/switchtec path in candidates, got: {vendor_strs}"
         )
 
+    def test_includes_native_dir(self) -> None:
+        """Verify the _native/ path is among the candidates."""
+        candidates = _find_library_paths()
+        candidate_strs = [str(c) for c in candidates]
+        assert any("_native" in s for s in candidate_strs), (
+            f"Expected _native path in candidates, got: {candidate_strs}"
+        )
+
+    def test_native_before_vendor(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Verify _native/ path comes before vendor path in search order."""
+        monkeypatch.delenv("SWITCHTEC_LIB_DIR", raising=False)
+        candidates = _find_library_paths()
+        candidate_strs = [str(c) for c in candidates]
+
+        native_idx = next(
+            (i for i, s in enumerate(candidate_strs) if "_native" in s), None
+        )
+        vendor_idx = next(
+            (i for i, s in enumerate(candidate_strs) if "vendor" in s), None
+        )
+        assert native_idx is not None, "No _native path found in candidates"
+        assert vendor_idx is not None, "No vendor path found in candidates"
+        assert native_idx < vendor_idx, (
+            f"_native (index {native_idx}) should come before vendor "
+            f"(index {vendor_idx}) in search order"
+        )
+
     def test_env_var_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """When SWITCHTEC_LIB_DIR is set, its path appears in candidates."""
         fake_dir = "/opt/custom/switchtec"

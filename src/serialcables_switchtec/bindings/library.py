@@ -1,7 +1,7 @@
 """Platform-aware Switchtec shared library loader.
 
 Uses CDLL (cdecl calling convention) on all platforms.
-Searches: vendor/switchtec, SWITCHTEC_LIB_DIR env, system paths.
+Searches: SWITCHTEC_LIB_DIR env, _native/ (wheel), vendor/switchtec, system paths.
 """
 
 from __future__ import annotations
@@ -24,8 +24,9 @@ def _find_library_paths() -> list[Path]:
 
     Search order:
     1. SWITCHTEC_LIB_DIR environment variable (explicit override)
-    2. Vendored build in vendor/switchtec/lib/ (built by scripts/build_lib.py)
-    3. System library paths (LD_LIBRARY_PATH / PATH)
+    2. _native/ directory (pre-built wheel installs)
+    3. Vendored build in vendor/switchtec/lib/ (built by scripts/build_lib.py)
+    4. System library paths (LD_LIBRARY_PATH / PATH)
     """
     candidates: list[Path] = []
 
@@ -36,13 +37,25 @@ def _find_library_paths() -> list[Path]:
         if sys.platform == "win32":
             candidates.append(p / "switchtec.dll")
         else:
-            for so in sorted(p.glob("libswitchtec*.so*"), reverse=True):
+            for so in sorted(p.glob("libswitchtec.so*"), reverse=True):
                 candidates.append(so)
             candidates.append(p / "libswitchtec.so")
 
-    # 2. Vendored build (relative to this package)
-    pkg_dir = Path(__file__).resolve().parent.parent.parent.parent
-    vendor_dir = pkg_dir / "vendor" / "switchtec"
+    # Package root: serialcables_switchtec/
+    pkg_root = Path(__file__).resolve().parent.parent
+
+    # 2. Pre-built native library (wheel installs)
+    native_dir = pkg_root / "_native"
+    if sys.platform == "win32":
+        candidates.append(native_dir / "switchtec.dll")
+    else:
+        for so in sorted(native_dir.glob("libswitchtec.so*"), reverse=True):
+            candidates.append(so)
+        candidates.append(native_dir / "libswitchtec.so")
+
+    # 3. Vendored build (only works in dev/editable installs, not site-packages)
+    project_root = pkg_root.parent.parent
+    vendor_dir = project_root / "vendor" / "switchtec"
 
     if sys.platform == "win32":
         candidates.append(vendor_dir / "lib" / "switchtec.dll")
@@ -52,11 +65,11 @@ def _find_library_paths() -> list[Path]:
         candidates.append(vendor_dir / "libswitchtec.so")
         candidates.append(vendor_dir / ".libs" / "libswitchtec.so")
 
-    # 3. System library paths
+    # 4. System library paths
     if sys.platform != "win32":
         for lib_dir in ["/usr/local/lib", "/usr/lib", "/usr/lib64", "/opt/switchtec/lib"]:
             p = Path(lib_dir)
-            for so in sorted(p.glob("libswitchtec*.so*"), reverse=True):
+            for so in sorted(p.glob("libswitchtec.so*"), reverse=True):
                 candidates.append(so)
             candidates.append(p / "libswitchtec.so")
 

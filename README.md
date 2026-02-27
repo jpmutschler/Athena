@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Build](https://img.shields.io/badge/build-hatchling-green.svg)](https://hatch.pypa.io/)
-<!-- [![PyPI version](https://img.shields.io/pypi/v/serialcables-switchtec.svg)](https://pypi.org/project/serialcables-switchtec/) -->
+<!-- [![PyPI version](https://img.shields.io/pypi/v/serialcables-athena.svg)](https://pypi.org/project/serialcables-athena/) -->
 <!-- [![CI](https://github.com/serialcables/serialcables-switchtec/actions/workflows/ci.yml/badge.svg)](https://github.com/serialcables/serialcables-switchtec/actions) -->
 <!-- [![Coverage](https://img.shields.io/codecov/c/github/serialcables/serialcables-switchtec.svg)](https://codecov.io/gh/serialcables/serialcables-switchtec) -->
 
@@ -101,16 +101,17 @@ Python 3.10 or later is required.
 
 ### Switchtec C Library
 
-This package wraps the [Microchip switchtec-user](https://github.com/Microsemi/switchtec-user) C library. You must provide a compiled copy of `libswitchtec.so` (Linux) or `switchtec.dll` (Windows).
+Pre-built platform wheels for **Windows x86_64** and **Linux x86_64** include the native library — no separate compilation needed. Just `pip install serialcables-athena`.
 
-The library loader searches the following locations in order:
+For other platforms or custom builds, the library loader searches the following locations in order:
 
 1. `SWITCHTEC_LIB_DIR` environment variable (explicit override)
-2. `vendor/switchtec/lib/` relative to the package installation (vendored build from `scripts/build_lib.py`)
-3. System library paths (`/usr/local/lib`, `/usr/lib`, `/usr/lib64`, `/opt/switchtec/lib`)
-4. System `LD_LIBRARY_PATH` / `PATH` fallback
+2. `_native/` directory inside the installed package (pre-built wheel installs)
+3. `vendor/switchtec/lib/` relative to the project root (dev environment, built by `scripts/build_lib.py`)
+4. System library paths (`/usr/local/lib`, `/usr/lib`, `/usr/lib64`, `/opt/switchtec/lib`)
+5. System `LD_LIBRARY_PATH` / `PATH` fallback
 
-See [Building the C Library](#building-the-c-library) for automated build instructions.
+See [Building the C Library](#building-the-c-library) for manual build instructions.
 
 **Using a custom path:**
 
@@ -126,9 +127,11 @@ A Microsemi/Microchip Switchtec PCIe switch device must be accessible at a devic
 
 ## Building the C Library
 
-The C source is included at `resources/switchtec-user-4.4-rc2/`. A cross-platform build script is provided.
+Pre-built wheels are available for Windows x86_64 and Linux x86_64. If you installed via `pip install serialcables-athena`, the native library is already included and this section can be skipped.
 
-### Quick Start
+### Building from Source
+
+The C source is included at [`switchtec-user-4.4-rc2/`](https://github.com/Microsemi/switchtec-user/releases/tag/v4.4-rc2). A cross-platform build script is provided.
 
 ```bash
 python scripts/build_lib.py
@@ -193,31 +196,31 @@ python -c "from serialcables_switchtec.bindings.library import load_library; loa
 **Core only** (CLI + Python library, no server dependencies):
 
 ```bash
-pip install serialcables-switchtec
+pip install serialcables-athena
 ```
 
 **With REST API** (adds FastAPI, Uvicorn, WebSockets):
 
 ```bash
-pip install "serialcables-switchtec[api]"
+pip install "serialcables-athena[api]"
 ```
 
 **With browser dashboard** (adds NiceGUI):
 
 ```bash
-pip install "serialcables-switchtec[ui]"
+pip install "serialcables-athena[ui]"
 ```
 
 **Everything** (API + UI):
 
 ```bash
-pip install "serialcables-switchtec[all]"
+pip install "serialcables-athena[all]"
 ```
 
 **Development** (adds pytest, ruff, httpx, pytest-asyncio, pytest-cov):
 
 ```bash
-pip install "serialcables-switchtec[dev]"
+pip install "serialcables-athena[dev]"
 ```
 
 ### From source
@@ -268,7 +271,7 @@ Ports:       48
 ### 4. Start the API server and dashboard
 
 ```bash
-pip install "serialcables-switchtec[all]"
+pip install "serialcables-athena[all]"
 athena serve
 ```
 
@@ -986,11 +989,13 @@ vendor/switchtec/lib/          # Built shared library output directory
 resources/switchtec-user-4.4-rc2/  # C library source
 
 src/serialcables_switchtec/
+|-- _native/                    # Pre-built native libraries (populated in wheels)
+|   +-- __init__.py
 |-- __init__.py                 # Package entry point, exports SwitchtecError
 |-- exceptions.py               # Exception hierarchy with errno/MRPC mapping
 |
 |-- bindings/                   # ctypes interface to libswitchtec
-|   |-- library.py              # Platform-aware CDLL loader (env, vendor, system)
+|   |-- library.py              # Platform-aware CDLL loader (env, _native, vendor, system)
 |   |-- constants.py            # IntEnums from C headers (Gen, Variant, LTSSM, patterns)
 |   |-- types.py                # ctypes Structure definitions matching C structs
 |   +-- functions.py            # Function prototypes (argtypes/restype)

@@ -34,6 +34,12 @@ vendor/switchtec/lib/*.dylib
 !vendor/switchtec/lib/.gitkeep
 resources/switchtec-user-4.4-rc2/build/
 
+# Native libraries (built by CI, embedded in wheels)
+src/serialcables_switchtec/_native/*.dll
+src/serialcables_switchtec/_native/*.so
+src/serialcables_switchtec/_native/*.so.*
+src/serialcables_switchtec/_native/*.dylib
+
 # OS
 .DS_Store
 Thumbs.db
