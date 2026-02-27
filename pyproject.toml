@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "serialcables-switchtec"
+version = "0.1.0"
+description = "Serial Cables Gen6 PCIe Switchtec Host Card Management Interface"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0",
+    "click>=8.1",
+    "structlog>=23.1",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.23",
+    "websockets>=11.0",
+]
+ui = [
+    "nicegui>=2.0",
+]
+all = [
+    "serialcables-switchtec[api,ui]",
+]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.1",
+    "ruff>=0.1",
+    "httpx>=0.24",
+]
+
+[project.scripts]
+switchtec-cli = "serialcables_switchtec.cli.main:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/serialcables_switchtec"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

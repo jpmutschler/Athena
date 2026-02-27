@@ -1,0 +1,98 @@
+"""FastAPI application factory with device registry and lifespan."""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from serialcables_switchtec.api.state import (
+    get_device_registry,
+    verify_api_key,
+)
+from serialcables_switchtec.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Application lifespan: cleanup open devices on shutdown."""
+    logger.info("api_starting")
+    yield
+    registry = get_device_registry()
+    for dev_id, (dev, _path) in registry.items():
+        try:
+            dev.close()
+            logger.info("device_closed_on_shutdown", device_id=dev_id)
+        except Exception as e:
+            logger.error(
+                "device_close_failed_on_shutdown",
+                device_id=dev_id,
+                error=str(e),
+            )
+    registry.clear()
+    logger.info("api_stopped")
+
+
+def create_app() -> FastAPI:
+    """Create and configure the FastAPI application."""
+    app = FastAPI(
+        title="Serial Cables Switchtec API",
+        description=(
+            "Serial Cables Gen6 PCIe Switchtec Host Card"
+            " Management Interface"
+        ),
+        version="0.1.0",
+        lifespan=lifespan,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+        ],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Content-Type", "Authorization", "X-API-Key"],
+    )
+
+    auth_dep = [Depends(verify_api_key)]
+
+    from serialcables_switchtec.api.routes.devices import (
+        router as devices_router,
+    )
+    from serialcables_switchtec.api.routes.diagnostics import (
+        router as diag_router,
+    )
+    from serialcables_switchtec.api.routes.ports import (
+        router as ports_router,
+    )
+
+    app.include_router(
+        devices_router,
+        prefix="/api/devices",
+        tags=["devices"],
+        dependencies=auth_dep,
+    )
+    app.include_router(
+        ports_router,
+        prefix="/api/devices",
+        tags=["ports"],
+        dependencies=auth_dep,
+    )
+    app.include_router(
+        diag_router,
+        prefix="/api/devices",
+        tags=["diagnostics"],
+        dependencies=auth_dep,
+    )
+
+    @app.get("/api/health")
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    return app
