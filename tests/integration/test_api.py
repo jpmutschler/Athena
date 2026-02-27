@@ -455,27 +455,22 @@ class TestDiagRoutes:
 
     def test_eye_start_happy_path(self, client, registered_device):
         """POST eye start should invoke DiagnosticsManager.eye_start and return started."""
-        mock_diag = MagicMock()
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post(
-                "/api/devices/testdev/diag/eye/start",
-                json={
-                    "lane_mask": [1, 0, 0, 0],
-                    "x_start": -64,
-                    "x_end": 64,
-                    "x_step": 1,
-                    "y_start": -255,
-                    "y_end": 255,
-                    "y_step": 2,
-                    "step_interval": 10,
-                },
-            )
+        response = client.post(
+            "/api/devices/testdev/diag/eye/start",
+            json={
+                "lane_mask": [1, 0, 0, 0],
+                "x_start": -64,
+                "x_end": 64,
+                "x_step": 1,
+                "y_start": -255,
+                "y_end": 255,
+                "y_step": 2,
+                "step_interval": 10,
+            },
+        )
         assert response.status_code == 200
         assert response.json() == {"status": "started"}
-        mock_diag.eye_start.assert_called_once_with(
+        registered_device.diagnostics.eye_start.assert_called_once_with(
             lane_mask=[1, 0, 0, 0],
             x_start=-64,
             x_end=64,
@@ -488,30 +483,20 @@ class TestDiagRoutes:
 
     def test_eye_start_defaults(self, client, registered_device):
         """POST eye start with empty body should use default parameters."""
-        mock_diag = MagicMock()
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post(
-                "/api/devices/testdev/diag/eye/start",
-                json={},
-            )
+        response = client.post(
+            "/api/devices/testdev/diag/eye/start",
+            json={},
+        )
         assert response.status_code == 200
         assert response.json() == {"status": "started"}
-        mock_diag.eye_start.assert_called_once()
+        registered_device.diagnostics.eye_start.assert_called_once()
 
     def test_eye_cancel_happy_path(self, client, registered_device):
         """POST eye cancel should invoke DiagnosticsManager.eye_cancel."""
-        mock_diag = MagicMock()
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post("/api/devices/testdev/diag/eye/cancel")
+        response = client.post("/api/devices/testdev/diag/eye/cancel")
         assert response.status_code == 200
         assert response.json() == {"status": "cancelled"}
-        mock_diag.eye_cancel.assert_called_once()
+        registered_device.diagnostics.eye_cancel.assert_called_once()
 
     def test_ltssm_log_happy_path(self, client, registered_device):
         """GET LTSSM log should return entries from DiagnosticsManager."""
@@ -528,137 +513,97 @@ class TestDiagRoutes:
                 rx_minor_state=0,
             ),
         ]
-        mock_diag = MagicMock()
-        mock_diag.ltssm_log.return_value = mock_entries
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get("/api/devices/testdev/diag/ltssm/0")
+        registered_device.diagnostics.ltssm_log.return_value = mock_entries
+        response = client.get("/api/devices/testdev/diag/ltssm/0")
         assert response.status_code == 200
         body = response.json()
         assert len(body) == 1
         assert body[0]["timestamp"] == 1000
         assert body[0]["link_state_str"] == "L0"
         assert body[0]["link_width"] == 16
-        mock_diag.ltssm_log.assert_called_once_with(0, max_entries=64)
+        registered_device.diagnostics.ltssm_log.assert_called_once_with(0, max_entries=64)
 
     def test_ltssm_log_custom_max_entries(self, client, registered_device):
         """GET LTSSM log should pass custom max_entries query param."""
-        mock_diag = MagicMock()
-        mock_diag.ltssm_log.return_value = []
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get(
-                "/api/devices/testdev/diag/ltssm/5?max_entries=128"
-            )
+        registered_device.diagnostics.ltssm_log.return_value = []
+        response = client.get(
+            "/api/devices/testdev/diag/ltssm/5?max_entries=128"
+        )
         assert response.status_code == 200
-        mock_diag.ltssm_log.assert_called_once_with(5, max_entries=128)
+        registered_device.diagnostics.ltssm_log.assert_called_once_with(5, max_entries=128)
 
     def test_ltssm_clear_happy_path(self, client, registered_device):
         """DELETE LTSSM log should invoke DiagnosticsManager.ltssm_clear."""
-        mock_diag = MagicMock()
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.delete("/api/devices/testdev/diag/ltssm/3")
+        response = client.delete("/api/devices/testdev/diag/ltssm/3")
         assert response.status_code == 200
         assert response.json() == {"status": "cleared"}
-        mock_diag.ltssm_clear.assert_called_once_with(3)
+        registered_device.diagnostics.ltssm_clear.assert_called_once_with(3)
 
     def test_loopback_get_happy_path(self, client, registered_device):
         """GET loopback should return LoopbackStatus from DiagnosticsManager."""
         from serialcables_switchtec.models.diagnostics import LoopbackStatus
 
-        mock_diag = MagicMock()
-        mock_diag.loopback_get.return_value = LoopbackStatus(
+        registered_device.diagnostics.loopback_get.return_value = LoopbackStatus(
             port_id=2, enabled=1, ltssm_speed=3,
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get("/api/devices/testdev/diag/loopback/2")
+        response = client.get("/api/devices/testdev/diag/loopback/2")
         assert response.status_code == 200
         body = response.json()
         assert body["port_id"] == 2
         assert body["enabled"] == 1
         assert body["ltssm_speed"] == 3
-        mock_diag.loopback_get.assert_called_once_with(2)
+        registered_device.diagnostics.loopback_get.assert_called_once_with(2)
 
     def test_loopback_set_happy_path(self, client, registered_device):
         """POST loopback set should invoke DiagnosticsManager.loopback_set."""
-        mock_diag = MagicMock()
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post(
-                "/api/devices/testdev/diag/loopback/4",
-                json={"enable": True, "ltssm_speed": 3},
-            )
+        response = client.post(
+            "/api/devices/testdev/diag/loopback/4",
+            json={"enable": True, "ltssm_speed": 3},
+        )
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
-        mock_diag.loopback_set.assert_called_once()
-        call_kwargs = mock_diag.loopback_set.call_args
+        registered_device.diagnostics.loopback_set.assert_called_once()
+        call_kwargs = registered_device.diagnostics.loopback_set.call_args
         assert call_kwargs[0][0] == 4  # port_id positional arg
         assert call_kwargs[1]["enable"] is True
 
     def test_loopback_set_defaults(self, client, registered_device):
         """POST loopback set with empty body should use defaults."""
-        mock_diag = MagicMock()
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post(
-                "/api/devices/testdev/diag/loopback/0",
-                json={},
-            )
+        response = client.post(
+            "/api/devices/testdev/diag/loopback/0",
+            json={},
+        )
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
-        mock_diag.loopback_set.assert_called_once()
+        registered_device.diagnostics.loopback_set.assert_called_once()
 
     def test_pattern_gen_set_happy_path(self, client, registered_device):
         """POST pattern gen should invoke DiagnosticsManager.pattern_gen_set."""
-        mock_diag = MagicMock()
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post(
-                "/api/devices/testdev/diag/patgen/1",
-                json={"pattern": 3, "link_speed": 4},
-            )
+        response = client.post(
+            "/api/devices/testdev/diag/patgen/1",
+            json={"pattern": 3, "link_speed": 4},
+        )
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
-        mock_diag.pattern_gen_set.assert_called_once()
-        call_kwargs = mock_diag.pattern_gen_set.call_args
+        registered_device.diagnostics.pattern_gen_set.assert_called_once()
+        call_kwargs = registered_device.diagnostics.pattern_gen_set.call_args
         assert call_kwargs[0][0] == 1  # port_id
 
     def test_pattern_mon_get_happy_path(self, client, registered_device):
         """GET pattern monitor should return PatternMonResult."""
         from serialcables_switchtec.models.diagnostics import PatternMonResult
 
-        mock_diag = MagicMock()
-        mock_diag.pattern_mon_get.return_value = PatternMonResult(
+        registered_device.diagnostics.pattern_mon_get.return_value = PatternMonResult(
             port_id=5, lane_id=2, pattern_type=3, error_count=42,
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get("/api/devices/testdev/diag/patmon/5/2")
+        response = client.get("/api/devices/testdev/diag/patmon/5/2")
         assert response.status_code == 200
         body = response.json()
         assert body["port_id"] == 5
         assert body["lane_id"] == 2
         assert body["pattern_type"] == 3
         assert body["error_count"] == 42
-        mock_diag.pattern_mon_get.assert_called_once_with(5, 2)
+        registered_device.diagnostics.pattern_mon_get.assert_called_once_with(5, 2)
 
     def test_inject_dllp_happy_path(self, client, registered_device):
         """POST DLLP inject should invoke ErrorInjector.inject_dllp."""
@@ -880,8 +825,7 @@ class TestDiagRoutes:
         """GET receiver object should return ReceiverObject from DiagnosticsManager."""
         from serialcables_switchtec.models.diagnostics import ReceiverObject
 
-        mock_diag = MagicMock()
-        mock_diag.rcvr_obj.return_value = ReceiverObject(
+        registered_device.diagnostics.rcvr_obj.return_value = ReceiverObject(
             port_id=1,
             lane_id=0,
             ctle=5,
@@ -889,11 +833,7 @@ class TestDiagRoutes:
             speculative_dfe=3,
             dynamic_dfe=[10, 20, 30, 40, 50, 60, 70],
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get("/api/devices/testdev/diag/rcvr/1/0")
+        response = client.get("/api/devices/testdev/diag/rcvr/1/0")
         assert response.status_code == 200
         body = response.json()
         assert body["port_id"] == 1
@@ -901,110 +841,84 @@ class TestDiagRoutes:
         assert body["ctle"] == 5
         assert body["target_amplitude"] == 100
         assert body["dynamic_dfe"] == [10, 20, 30, 40, 50, 60, 70]
-        mock_diag.rcvr_obj.assert_called_once()
+        registered_device.diagnostics.rcvr_obj.assert_called_once()
 
     def test_rcvr_obj_previous_link(self, client, registered_device):
         """GET receiver object with link=previous should pass DiagLink.PREVIOUS."""
         from serialcables_switchtec.bindings.constants import DiagLink
         from serialcables_switchtec.models.diagnostics import ReceiverObject
 
-        mock_diag = MagicMock()
-        mock_diag.rcvr_obj.return_value = ReceiverObject(
+        registered_device.diagnostics.rcvr_obj.return_value = ReceiverObject(
             port_id=0, lane_id=0, ctle=0, target_amplitude=0,
             speculative_dfe=0, dynamic_dfe=[0, 0, 0, 0, 0, 0, 0],
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get(
-                "/api/devices/testdev/diag/rcvr/0/0?link=previous"
-            )
+        response = client.get(
+            "/api/devices/testdev/diag/rcvr/0/0?link=previous"
+        )
         assert response.status_code == 200
-        call_kwargs = mock_diag.rcvr_obj.call_args
+        call_kwargs = registered_device.diagnostics.rcvr_obj.call_args
         assert call_kwargs[1]["link"] == DiagLink.PREVIOUS
 
     def test_port_eq_coeff_happy_path(self, client, registered_device):
         """GET EQ coefficients should return PortEqCoeff from DiagnosticsManager."""
         from serialcables_switchtec.models.diagnostics import EqCursor, PortEqCoeff
 
-        mock_diag = MagicMock()
-        mock_diag.port_eq_tx_coeff.return_value = PortEqCoeff(
+        registered_device.diagnostics.port_eq_tx_coeff.return_value = PortEqCoeff(
             lane_count=2,
             cursors=[
                 EqCursor(pre=-6, post=-12),
                 EqCursor(pre=-4, post=-8),
             ],
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get("/api/devices/testdev/diag/eq/0")
+        response = client.get("/api/devices/testdev/diag/eq/0")
         assert response.status_code == 200
         body = response.json()
         assert body["lane_count"] == 2
         assert len(body["cursors"]) == 2
         assert body["cursors"][0]["pre"] == -6
         assert body["cursors"][1]["post"] == -8
-        mock_diag.port_eq_tx_coeff.assert_called_once()
+        registered_device.diagnostics.port_eq_tx_coeff.assert_called_once()
 
     def test_port_eq_coeff_far_end_previous(self, client, registered_device):
         """GET EQ coefficients with end=far_end and link=previous should pass correct enums."""
         from serialcables_switchtec.bindings.constants import DiagEnd, DiagLink
         from serialcables_switchtec.models.diagnostics import PortEqCoeff
 
-        mock_diag = MagicMock()
-        mock_diag.port_eq_tx_coeff.return_value = PortEqCoeff(
+        registered_device.diagnostics.port_eq_tx_coeff.return_value = PortEqCoeff(
             lane_count=0, cursors=[],
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get(
-                "/api/devices/testdev/diag/eq/10?end=far_end&link=previous"
-            )
+        response = client.get(
+            "/api/devices/testdev/diag/eq/10?end=far_end&link=previous"
+        )
         assert response.status_code == 200
-        call_kwargs = mock_diag.port_eq_tx_coeff.call_args
+        call_kwargs = registered_device.diagnostics.port_eq_tx_coeff.call_args
         assert call_kwargs[0][0] == 10  # port_id
         assert call_kwargs[1]["end"] == DiagEnd.FAR_END
         assert call_kwargs[1]["link"] == DiagLink.PREVIOUS
 
     def test_crosshair_enable_happy_path(self, client, registered_device):
         """POST crosshair enable should invoke DiagnosticsManager.cross_hair_enable."""
-        mock_diag = MagicMock()
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post(
-                "/api/devices/testdev/diag/crosshair/enable/5",
-            )
+        response = client.post(
+            "/api/devices/testdev/diag/crosshair/enable/5",
+        )
         assert response.status_code == 200
         assert response.json() == {"status": "enabled"}
-        mock_diag.cross_hair_enable.assert_called_once_with(5)
+        registered_device.diagnostics.cross_hair_enable.assert_called_once_with(5)
 
     def test_crosshair_disable_happy_path(self, client, registered_device):
         """POST crosshair disable should invoke DiagnosticsManager.cross_hair_disable."""
-        mock_diag = MagicMock()
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post(
-                "/api/devices/testdev/diag/crosshair/disable",
-            )
+        response = client.post(
+            "/api/devices/testdev/diag/crosshair/disable",
+        )
         assert response.status_code == 200
         assert response.json() == {"status": "disabled"}
-        mock_diag.cross_hair_disable.assert_called_once()
+        registered_device.diagnostics.cross_hair_disable.assert_called_once()
 
     def test_crosshair_get_happy_path(self, client, registered_device):
         """GET crosshair should return CrossHairResult list from DiagnosticsManager."""
         from serialcables_switchtec.models.diagnostics import CrossHairResult
 
-        mock_diag = MagicMock()
-        mock_diag.cross_hair_get.return_value = [
+        registered_device.diagnostics.cross_hair_get.return_value = [
             CrossHairResult(
                 lane_id=0,
                 state=2,
@@ -1017,13 +931,9 @@ class TestDiagRoutes:
                 eye_top_right_lim=80,
             ),
         ]
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get(
-                "/api/devices/testdev/diag/crosshair?start_lane=0&num_lanes=1"
-            )
+        response = client.get(
+            "/api/devices/testdev/diag/crosshair?start_lane=0&num_lanes=1"
+        )
         assert response.status_code == 200
         body = response.json()
         assert len(body) == 1
@@ -1031,126 +941,81 @@ class TestDiagRoutes:
         assert body[0]["state_name"] == "DONE"
         assert body[0]["eye_left_lim"] == -32
         assert body[0]["eye_right_lim"] == 32
-        mock_diag.cross_hair_get.assert_called_once_with(0, 1)
+        registered_device.diagnostics.cross_hair_get.assert_called_once_with(0, 1)
 
     def test_crosshair_get_defaults(self, client, registered_device):
         """GET crosshair without query params should use defaults."""
-        mock_diag = MagicMock()
-        mock_diag.cross_hair_get.return_value = []
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get("/api/devices/testdev/diag/crosshair")
+        registered_device.diagnostics.cross_hair_get.return_value = []
+        response = client.get("/api/devices/testdev/diag/crosshair")
         assert response.status_code == 200
-        mock_diag.cross_hair_get.assert_called_once_with(0, 1)
+        registered_device.diagnostics.cross_hair_get.assert_called_once_with(0, 1)
 
     # ── Error-path tests (exception handling in route handlers) ─────────
 
     def test_eye_start_error_maps_to_http(self, client, registered_device):
         """eye_start raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.eye_start.side_effect = InvalidPortError("bad port", error_code=2)
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post(
-                "/api/devices/testdev/diag/eye/start", json={},
-            )
+        registered_device.diagnostics.eye_start.side_effect = InvalidPortError("bad port", error_code=2)
+        response = client.post(
+            "/api/devices/testdev/diag/eye/start", json={},
+        )
         assert response.status_code == 400
 
     def test_eye_cancel_error_maps_to_http(self, client, registered_device):
         """eye_cancel raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.eye_cancel.side_effect = SwitchtecTimeoutError(
+        registered_device.diagnostics.eye_cancel.side_effect = SwitchtecTimeoutError(
             "timed out", error_code=6
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post("/api/devices/testdev/diag/eye/cancel")
+        response = client.post("/api/devices/testdev/diag/eye/cancel")
         assert response.status_code == 504
 
     def test_ltssm_log_error_maps_to_http(self, client, registered_device):
         """ltssm_log raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.ltssm_log.side_effect = InvalidPortError("bad port", error_code=2)
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get("/api/devices/testdev/diag/ltssm/0")
+        registered_device.diagnostics.ltssm_log.side_effect = InvalidPortError("bad port", error_code=2)
+        response = client.get("/api/devices/testdev/diag/ltssm/0")
         assert response.status_code == 400
 
     def test_ltssm_clear_error_maps_to_http(self, client, registered_device):
         """ltssm_clear raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.ltssm_clear.side_effect = InvalidPortError(
+        registered_device.diagnostics.ltssm_clear.side_effect = InvalidPortError(
             "bad port", error_code=2
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.delete("/api/devices/testdev/diag/ltssm/0")
+        response = client.delete("/api/devices/testdev/diag/ltssm/0")
         assert response.status_code == 400
 
     def test_loopback_get_error_maps_to_http(self, client, registered_device):
         """loopback_get raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.loopback_get.side_effect = UnsupportedError(
+        registered_device.diagnostics.loopback_get.side_effect = UnsupportedError(
             "not supported", error_code=7
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get("/api/devices/testdev/diag/loopback/0")
+        response = client.get("/api/devices/testdev/diag/loopback/0")
         assert response.status_code == 501
 
     def test_loopback_set_error_maps_to_http(self, client, registered_device):
         """loopback_set raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.loopback_set.side_effect = InvalidParameterError(
+        registered_device.diagnostics.loopback_set.side_effect = InvalidParameterError(
             "bad param", error_code=4
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post(
-                "/api/devices/testdev/diag/loopback/0", json={},
-            )
+        response = client.post(
+            "/api/devices/testdev/diag/loopback/0", json={},
+        )
         assert response.status_code == 400
 
     def test_pattern_gen_set_error_maps_to_http(self, client, registered_device):
         """pattern_gen_set raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.pattern_gen_set.side_effect = MrpcError(
+        registered_device.diagnostics.pattern_gen_set.side_effect = MrpcError(
             "mrpc failed", error_code=9
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post(
-                "/api/devices/testdev/diag/patgen/0", json={},
-            )
+        response = client.post(
+            "/api/devices/testdev/diag/patgen/0", json={},
+        )
         assert response.status_code == 502
 
     def test_pattern_mon_get_error_maps_to_http(self, client, registered_device):
         """pattern_mon_get raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.pattern_mon_get.side_effect = InvalidLaneError(
+        registered_device.diagnostics.pattern_mon_get.side_effect = InvalidLaneError(
             "bad lane", error_code=3
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get("/api/devices/testdev/diag/patmon/0/0")
+        response = client.get("/api/devices/testdev/diag/patmon/0/0")
         assert response.status_code == 400
 
     def test_inject_dllp_error_maps_to_http(self, client, registered_device):
@@ -1253,71 +1118,46 @@ class TestDiagRoutes:
 
     def test_rcvr_obj_error_maps_to_http(self, client, registered_device):
         """rcvr_obj raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.rcvr_obj.side_effect = InvalidLaneError(
+        registered_device.diagnostics.rcvr_obj.side_effect = InvalidLaneError(
             "bad lane", error_code=3
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get("/api/devices/testdev/diag/rcvr/0/0")
+        response = client.get("/api/devices/testdev/diag/rcvr/0/0")
         assert response.status_code == 400
 
     def test_port_eq_coeff_error_maps_to_http(self, client, registered_device):
         """port_eq_tx_coeff raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.port_eq_tx_coeff.side_effect = UnsupportedError(
+        registered_device.diagnostics.port_eq_tx_coeff.side_effect = UnsupportedError(
             "not supported", error_code=7
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get("/api/devices/testdev/diag/eq/0")
+        response = client.get("/api/devices/testdev/diag/eq/0")
         assert response.status_code == 501
 
     def test_crosshair_enable_error_maps_to_http(self, client, registered_device):
         """cross_hair_enable raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.cross_hair_enable.side_effect = InvalidLaneError(
+        registered_device.diagnostics.cross_hair_enable.side_effect = InvalidLaneError(
             "bad lane", error_code=3
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post(
-                "/api/devices/testdev/diag/crosshair/enable/0",
-            )
+        response = client.post(
+            "/api/devices/testdev/diag/crosshair/enable/0",
+        )
         assert response.status_code == 400
 
     def test_crosshair_disable_error_maps_to_http(self, client, registered_device):
         """cross_hair_disable raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.cross_hair_disable.side_effect = MrpcError(
+        registered_device.diagnostics.cross_hair_disable.side_effect = MrpcError(
             "mrpc failed", error_code=9
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.post(
-                "/api/devices/testdev/diag/crosshair/disable",
-            )
+        response = client.post(
+            "/api/devices/testdev/diag/crosshair/disable",
+        )
         assert response.status_code == 502
 
     def test_crosshair_get_error_maps_to_http(self, client, registered_device):
         """cross_hair_get raising SwitchtecError should be mapped to HTTP error."""
-        mock_diag = MagicMock()
-        mock_diag.cross_hair_get.side_effect = SwitchtecTimeoutError(
+        registered_device.diagnostics.cross_hair_get.side_effect = SwitchtecTimeoutError(
             "timed out", error_code=6
         )
-        with patch(
-            "serialcables_switchtec.api.routes.diagnostics.DiagnosticsManager",
-            return_value=mock_diag,
-        ):
-            response = client.get("/api/devices/testdev/diag/crosshair")
+        response = client.get("/api/devices/testdev/diag/crosshair")
         assert response.status_code == 504
 
 

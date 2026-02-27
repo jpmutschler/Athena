@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import threading
 from ctypes import POINTER, c_float, c_int
 from typing import TYPE_CHECKING, Self
 
@@ -68,16 +69,18 @@ _PHASE_NAMES = {
 
 
 _prototypes_configured = False
+_lib_init_lock = threading.Lock()
 
 
 def _ensure_library() -> ctypes.CDLL:
     """Load and configure the library if not already done."""
     global _prototypes_configured
-    lib = load_library()
-    if not _prototypes_configured:
-        setup_prototypes(lib)
-        _prototypes_configured = True
-    return lib
+    with _lib_init_lock:
+        lib = load_library()
+        if not _prototypes_configured:
+            setup_prototypes(lib)
+            _prototypes_configured = True
+        return lib
 
 
 class SwitchtecDevice:

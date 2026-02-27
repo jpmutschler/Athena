@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 
 class BwCounterDirection(BaseModel):
@@ -14,6 +14,7 @@ class BwCounterDirection(BaseModel):
     comp: int
     nonposted: int
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def total(self) -> int:
         return self.posted + self.comp + self.nonposted

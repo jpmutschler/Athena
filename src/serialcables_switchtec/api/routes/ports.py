@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.get("/{device_id}/ports", response_model=list[PortStatus])
-async def get_ports(
+def get_ports(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> list[PortStatus]:
     """Get status of all ports for an open device."""
@@ -24,7 +24,7 @@ async def get_ports(
 
 
 @router.get("/{device_id}/ports/{phys_port_id}/pff")
-async def get_port_pff(
+def get_port_pff(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     phys_port_id: int = Path(ge=0, le=59),
 ) -> dict[str, int]:

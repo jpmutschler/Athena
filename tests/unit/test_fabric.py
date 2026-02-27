@@ -70,13 +70,13 @@ class TestPortControlHotReset:
         fab.port_control(
             phys_port_id=2,
             control_type=FabPortControlType.HOT_RESET,
-            hot_reset_flag=FabHotResetFlag.FUNDAMENTAL,
+            hot_reset_flag=FabHotResetFlag.PERST,
         )
         mock_library.switchtec_port_control.assert_called_once_with(
             0xDEADBEEF,
             int(FabPortControlType.HOT_RESET),
             2,
-            int(FabHotResetFlag.FUNDAMENTAL),
+            int(FabHotResetFlag.PERST),
         )
 
     def test_port_control_hot_reset_default_flag(self, device, mock_library):

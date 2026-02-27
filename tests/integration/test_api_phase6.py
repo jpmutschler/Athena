@@ -635,7 +635,7 @@ class TestFabricRoutes:
         mock_mgr.port_control.assert_called_once_with(
             phys_port_id=3,
             control_type=FabPortControlType.HOT_RESET,
-            hot_reset_flag=FabHotResetFlag.FUNDAMENTAL,
+            hot_reset_flag=FabHotResetFlag.PERST,
         )
 
     def test_port_control_defaults(self, client, registered_device):

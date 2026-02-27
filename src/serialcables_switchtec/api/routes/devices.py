@@ -40,7 +40,7 @@ class DeviceEntry(BaseModel):
 
 
 @router.get("/", response_model=list[DeviceEntry])
-async def list_open_devices() -> list[DeviceEntry]:
+def list_open_devices() -> list[DeviceEntry]:
     """List all currently open devices."""
     registry = get_device_registry()
     return [
@@ -50,7 +50,7 @@ async def list_open_devices() -> list[DeviceEntry]:
 
 
 @router.get("/discover")
-async def discover_devices() -> list[dict]:
+def discover_devices() -> list[dict]:
     """Discover available Switchtec devices on the system."""
     try:
         devices = SwitchtecDevice.list_devices()
@@ -113,7 +113,7 @@ async def close_device(
 
 
 @router.get("/{device_id}", response_model=DeviceSummary)
-async def get_device_info(
+def get_device_info(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> DeviceSummary:
     """Get summary information for an open device."""
@@ -174,7 +174,7 @@ async def hard_reset(
 
 
 @router.get("/{device_id}/temperature")
-async def get_temperature(
+def get_temperature(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> dict[str, float]:
     """Get die temperature for an open device."""

@@ -16,7 +16,6 @@ from serialcables_switchtec.bindings.constants import (
     DiagPattern,
     DiagPatternLinkRate,
 )
-from serialcables_switchtec.core.diagnostics import DiagnosticsManager
 from serialcables_switchtec.core.error_injection import ErrorInjector
 from serialcables_switchtec.models.diagnostics import (
     CrossHairResult,
@@ -48,14 +47,14 @@ class EyeStartRequest(BaseModel):
 
 
 @router.post("/{device_id}/diag/eye/start")
-async def eye_start(
+def eye_start(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     request: EyeStartRequest = ...,
 ) -> dict[str, str]:
     """Start eye diagram capture."""
     dev = get_device(device_id)
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         diag.eye_start(
             lane_mask=request.lane_mask,
             x_start=request.x_start,
@@ -75,27 +74,27 @@ async def eye_start(
     "/{device_id}/diag/eye/fetch",
     response_model=EyeData,
 )
-async def eye_fetch(
+def eye_fetch(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     pixel_count: int = Query(default=4096, ge=1, le=1_000_000),
 ) -> EyeData:
     """Fetch eye diagram data from an in-progress capture."""
     dev = get_device(device_id)
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         return diag.eye_fetch(pixel_count)
     except Exception as e:
         raise_on_error(e, "eye_fetch")
 
 
 @router.post("/{device_id}/diag/eye/cancel")
-async def eye_cancel(
+def eye_cancel(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> dict[str, str]:
     """Cancel eye diagram capture."""
     dev = get_device(device_id)
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         diag.eye_cancel()
         return {"status": "cancelled"}
     except Exception as e:
@@ -109,7 +108,7 @@ async def eye_cancel(
     "/{device_id}/diag/ltssm/{port_id}",
     response_model=list[LtssmLogEntry],
 )
-async def ltssm_log(
+def ltssm_log(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
     max_entries: int = Query(default=64, ge=1, le=1024),
@@ -117,21 +116,21 @@ async def ltssm_log(
     """Get LTSSM state log for a port."""
     dev = get_device(device_id)
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         return diag.ltssm_log(port_id, max_entries=max_entries)
     except Exception as e:
         raise_on_error(e, "ltssm_log")
 
 
 @router.delete("/{device_id}/diag/ltssm/{port_id}")
-async def ltssm_clear(
+def ltssm_clear(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
 ) -> dict[str, str]:
     """Clear LTSSM log for a port."""
     dev = get_device(device_id)
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         diag.ltssm_clear(port_id)
         return {"status": "cleared"}
     except Exception as e:
@@ -150,21 +149,21 @@ class LoopbackSetRequest(BaseModel):
     "/{device_id}/diag/loopback/{port_id}",
     response_model=LoopbackStatus,
 )
-async def loopback_get(
+def loopback_get(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
 ) -> LoopbackStatus:
     """Get loopback status for a port."""
     dev = get_device(device_id)
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         return diag.loopback_get(port_id)
     except Exception as e:
         raise_on_error(e, "loopback_get")
 
 
 @router.post("/{device_id}/diag/loopback/{port_id}")
-async def loopback_set(
+def loopback_set(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
     request: LoopbackSetRequest = ...,
@@ -172,7 +171,7 @@ async def loopback_set(
     """Set loopback on a port."""
     dev = get_device(device_id)
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         diag.loopback_set(
             port_id,
             enable=request.enable,
@@ -192,7 +191,7 @@ class PatternGenRequest(BaseModel):
 
 
 @router.post("/{device_id}/diag/patgen/{port_id}")
-async def pattern_gen_set(
+def pattern_gen_set(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
     request: PatternGenRequest = ...,
@@ -200,7 +199,7 @@ async def pattern_gen_set(
     """Set pattern generator on a port."""
     dev = get_device(device_id)
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         diag.pattern_gen_set(
             port_id,
             pattern=DiagPattern(request.pattern),
@@ -215,7 +214,7 @@ async def pattern_gen_set(
     "/{device_id}/diag/patmon/{port_id}/{lane_id}",
     response_model=PatternMonResult,
 )
-async def pattern_mon_get(
+def pattern_mon_get(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
     lane_id: int = Path(ge=0, le=143),
@@ -223,7 +222,7 @@ async def pattern_mon_get(
     """Get pattern monitor results."""
     dev = get_device(device_id)
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         return diag.pattern_mon_get(port_id, lane_id)
     except Exception as e:
         raise_on_error(e, "pattern_mon_get")
@@ -252,7 +251,7 @@ class AckNackInjectRequest(BaseModel):
 
 
 @router.post("/{device_id}/diag/inject/dllp/{port_id}")
-async def inject_dllp(
+def inject_dllp(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
     request: DllpInjectRequest = ...,
@@ -268,7 +267,7 @@ async def inject_dllp(
 
 
 @router.post("/{device_id}/diag/inject/dllp-crc/{port_id}")
-async def inject_dllp_crc(
+def inject_dllp_crc(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
     request: DllpCrcInjectRequest = ...,
@@ -284,7 +283,7 @@ async def inject_dllp_crc(
 
 
 @router.post("/{device_id}/diag/inject/tlp-lcrc/{port_id}")
-async def inject_tlp_lcrc(
+def inject_tlp_lcrc(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
     request: TlpLcrcInjectRequest = ...,
@@ -300,7 +299,7 @@ async def inject_tlp_lcrc(
 
 
 @router.post("/{device_id}/diag/inject/seq-num/{port_id}")
-async def inject_seq_num(
+def inject_seq_num(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
 ) -> dict[str, str]:
@@ -315,7 +314,7 @@ async def inject_seq_num(
 
 
 @router.post("/{device_id}/diag/inject/ack-nack/{port_id}")
-async def inject_ack_nack(
+def inject_ack_nack(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
     request: AckNackInjectRequest = ...,
@@ -331,7 +330,7 @@ async def inject_ack_nack(
 
 
 @router.post("/{device_id}/diag/inject/cto/{port_id}")
-async def inject_cto(
+def inject_cto(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
 ) -> dict[str, str]:
@@ -352,7 +351,7 @@ async def inject_cto(
     "/{device_id}/diag/rcvr/{port_id}/{lane_id}",
     response_model=ReceiverObject,
 )
-async def rcvr_obj(
+def rcvr_obj(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
     lane_id: int = Path(ge=0, le=143),
@@ -364,7 +363,7 @@ async def rcvr_obj(
         DiagLink.CURRENT if link == "current" else DiagLink.PREVIOUS
     )
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         return diag.rcvr_obj(port_id, lane_id, link=link_enum)
     except Exception as e:
         raise_on_error(e, "rcvr_obj")
@@ -374,7 +373,7 @@ async def rcvr_obj(
     "/{device_id}/diag/eq/{port_id}",
     response_model=PortEqCoeff,
 )
-async def port_eq_coeff(
+def port_eq_coeff(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     port_id: int = Path(ge=0, le=59),
     end: Literal["local", "far_end"] = "local",
@@ -387,7 +386,7 @@ async def port_eq_coeff(
         DiagLink.CURRENT if link == "current" else DiagLink.PREVIOUS
     )
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         return diag.port_eq_tx_coeff(port_id, end=end_enum, link=link_enum)
     except Exception as e:
         raise_on_error(e, "port_eq_tx_coeff")
@@ -397,14 +396,14 @@ async def port_eq_coeff(
 
 
 @router.post("/{device_id}/diag/crosshair/enable/{lane_id}")
-async def crosshair_enable(
+def crosshair_enable(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     lane_id: int = Path(ge=0, le=143),
 ) -> dict[str, str]:
     """Enable cross-hair measurement."""
     dev = get_device(device_id)
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         diag.cross_hair_enable(lane_id)
         return {"status": "enabled"}
     except Exception as e:
@@ -412,13 +411,13 @@ async def crosshair_enable(
 
 
 @router.post("/{device_id}/diag/crosshair/disable")
-async def crosshair_disable(
+def crosshair_disable(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> dict[str, str]:
     """Disable cross-hair measurement."""
     dev = get_device(device_id)
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         diag.cross_hair_disable()
         return {"status": "disabled"}
     except Exception as e:
@@ -429,7 +428,7 @@ async def crosshair_disable(
     "/{device_id}/diag/crosshair",
     response_model=list[CrossHairResult],
 )
-async def crosshair_get(
+def crosshair_get(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     start_lane: int = Query(default=0, ge=0, le=143),
     num_lanes: int = Query(default=1, ge=1, le=64),
@@ -437,7 +436,7 @@ async def crosshair_get(
     """Get cross-hair measurement results."""
     dev = get_device(device_id)
     try:
-        diag = DiagnosticsManager(dev)
+        diag = dev.diagnostics
         return diag.cross_hair_get(start_lane, num_lanes)
     except Exception as e:
         raise_on_error(e, "crosshair_get")

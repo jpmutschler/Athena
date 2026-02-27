@@ -601,7 +601,13 @@ class FwRo(IntEnum):
 
 
 class EvCntrTypeMask(IntFlag):
-    """Event counter type mask (may be OR'd together)."""
+    """Event counter type mask (may be OR'd together).
+
+    Aggregate masks:
+        ALL_ERRORS -- bits 0-18 (19 error types, excludes RULE_TABLE_HIT and TLP counters)
+        ALL_TLPS   -- bits 20-22 (POSTED_TLP | COMP_TLP | NON_POSTED_TLP)
+        ALL        -- bits 0-22 (all error types + rule table + TLP counters)
+    """
 
     UNSUP_REQ_ERR = 1 << 0
     ECRC_ERR = 1 << 1
@@ -646,4 +652,4 @@ class FabHotResetFlag(IntEnum):
     """Hot reset flags for fabric port control."""
 
     NONE = 0
-    FUNDAMENTAL = 1
+    PERST = 1

@@ -31,6 +31,7 @@ class PortControlRequest(BaseModel):
 
 class SetPortConfigRequest(BaseModel):
     port_type: int = Field(default=0, ge=0, le=255)
+    link_width: int = Field(default=0, ge=0, le=255)
     clock_source: int = Field(default=0, ge=0, le=255)
     clock_sris: int = Field(default=0, ge=0, le=255)
     hvd_inst: int = Field(default=0, ge=0, le=255)
@@ -85,6 +86,7 @@ def set_port_config(
         config = FabPortConfig(
             phys_port_id=port_id,
             port_type=request.port_type,
+            link_width=request.link_width,
             clock_source=request.clock_source,
             clock_sris=request.clock_sris,
             hvd_inst=request.hvd_inst,
