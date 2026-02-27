@@ -12,6 +12,7 @@ class TestCliHelp:
         runner = CliRunner()
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
+        assert "Athena" in result.output
         assert "Serial Cables" in result.output
 
     def test_device_help(self):

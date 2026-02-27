@@ -5,7 +5,7 @@ from __future__ import annotations
 from nicegui import ui
 
 from serialcables_switchtec.models.device import DeviceSummary
-from serialcables_switchtec.ui.theme import GEN_COLORS, SC_SUCCESS
+from serialcables_switchtec.ui.theme import COLORS, GEN_COLORS
 
 
 def device_card(summary: DeviceSummary) -> None:

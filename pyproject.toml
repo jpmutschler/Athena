@@ -36,7 +36,7 @@ dev = [
 ]
 
 [project.scripts]
-switchtec-cli = "serialcables_switchtec.cli.main:cli"
+athena = "serialcables_switchtec.cli.main:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/serialcables_switchtec"]

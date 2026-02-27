@@ -2,20 +2,40 @@
 
 from __future__ import annotations
 
-# Serial Cables brand colors
-SC_BLUE = "#1a73e8"
-SC_DARK_BG = "#1e1e2e"
-SC_CARD_BG = "#2d2d3f"
-SC_TEXT = "#e0e0e0"
-SC_ACCENT = "#4fc3f7"
-SC_SUCCESS = "#66bb6a"
-SC_WARNING = "#ffa726"
-SC_ERROR = "#ef5350"
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Colors:
+    """Centralized color palette for Athena dashboard."""
+
+    # Accent colors
+    cyan: str = "#00d4ff"
+    blue: str = "#58a6ff"
+    purple: str = "#bc8cff"
+
+    # Text layers
+    text_primary: str = "#e6edf3"
+    text_secondary: str = "#8b949e"
+    text_muted: str = "#484f58"
+
+    # Background layers
+    bg_primary: str = "#0d1117"
+    bg_secondary: str = "#161b22"
+    bg_card: str = "#1c2128"
+
+    # Status colors
+    success: str = "#66bb6a"
+    warning: str = "#ffa726"
+    error: str = "#ef5350"
+
+
+COLORS = Colors()
 
 # Link status colors
-LINK_UP_COLOR = SC_SUCCESS
-LINK_DOWN_COLOR = SC_ERROR
-LINK_TRAINING_COLOR = SC_WARNING
+LINK_UP_COLOR = COLORS.success
+LINK_DOWN_COLOR = COLORS.error
+LINK_TRAINING_COLOR = COLORS.warning
 
 # PCIe Gen colors
 GEN_COLORS = {
@@ -31,25 +51,34 @@ GEN_COLORS = {
 def apply_dark_theme() -> str:
     """Return CSS for dark theme styling."""
     return f"""
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
     :root {{
-        --sc-blue: {SC_BLUE};
-        --sc-dark-bg: {SC_DARK_BG};
-        --sc-card-bg: {SC_CARD_BG};
-        --sc-text: {SC_TEXT};
-        --sc-accent: {SC_ACCENT};
+        --sc-cyan: {COLORS.cyan};
+        --sc-bg-primary: {COLORS.bg_primary};
+        --sc-bg-secondary: {COLORS.bg_secondary};
+        --sc-bg-card: {COLORS.bg_card};
+        --sc-text-primary: {COLORS.text_primary};
+        --sc-text-secondary: {COLORS.text_secondary};
     }}
     body {{
-        background-color: {SC_DARK_BG} !important;
-        color: {SC_TEXT} !important;
+        background-color: {COLORS.bg_primary} !important;
+        color: {COLORS.text_primary} !important;
+        font-family: 'JetBrains Mono', monospace !important;
     }}
     .q-card {{
-        background-color: {SC_CARD_BG} !important;
-        color: {SC_TEXT} !important;
+        background-color: {COLORS.bg_card} !important;
+        color: {COLORS.text_primary} !important;
     }}
-    .q-toolbar {{
-        background-color: {SC_BLUE} !important;
+    .q-header {{
+        background-color: {COLORS.bg_secondary} !important;
+        border-bottom: 1px solid {COLORS.text_muted} !important;
     }}
     .q-drawer {{
-        background-color: #252538 !important;
+        background-color: {COLORS.bg_secondary} !important;
+        border-right: 1px solid {COLORS.text_muted} !important;
+    }}
+    .q-table {{
+        background-color: {COLORS.bg_card} !important;
+        color: {COLORS.text_primary} !important;
     }}
     """

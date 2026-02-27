@@ -13,7 +13,7 @@ from serialcables_switchtec.utils.logging import setup_logging
 @click.option("--json-output", is_flag=True, help="Output logs as JSON.")
 @click.pass_context
 def cli(ctx: click.Context, debug: bool, json_output: bool) -> None:
-    """Serial Cables Gen6 PCIe Switchtec Host Card Management Interface."""
+    """Athena -- Serial Cables Gen6 PCIe Switchtec Host Card Management Interface."""
     ctx.ensure_object(dict)
     level = "DEBUG" if debug else "INFO"
     setup_logging(level=level, json_output=json_output)

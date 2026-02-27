@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from nicegui import ui
+from pathlib import Path
+
+from nicegui import app, ui
 
 from serialcables_switchtec.ui.pages.dashboard import dashboard_page
 from serialcables_switchtec.ui.pages.discovery import discovery_page
@@ -11,9 +13,12 @@ from serialcables_switchtec.ui.pages.ltssm_trace import ltssm_trace_page
 from serialcables_switchtec.ui.pages.performance import performance_page
 from serialcables_switchtec.ui.pages.ports import ports_page
 
+_STATIC_DIR = Path(__file__).parent / "static"
+
 
 def register_pages() -> None:
-    """Register all NiceGUI pages."""
+    """Register all NiceGUI pages and static assets."""
+    app.add_static_files("/static", str(_STATIC_DIR))
 
     @ui.page("/")
     def index() -> None:

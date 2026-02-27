@@ -1,4 +1,4 @@
-# serialcables-switchtec
+# Athena -- serialcables-switchtec
 
 <!-- Badges -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -8,7 +8,7 @@
 <!-- [![CI](https://github.com/serialcables/serialcables-switchtec/actions/workflows/ci.yml/badge.svg)](https://github.com/serialcables/serialcables-switchtec/actions) -->
 <!-- [![Coverage](https://img.shields.io/codecov/c/github/serialcables/serialcables-switchtec.svg)](https://codecov.io/gh/serialcables/serialcables-switchtec) -->
 
-A Python-friendly interface to the Microsemi/Microchip Switchtec PCIe switch management library (`switchtec-user` 4.4-rc2, 200+ API functions). Built for **PCIe Validation Engineers** who perform eye diagrams, LTSSM analysis, loopback testing, pattern generation and monitoring, error injection, and receiver characterization.
+**Athena** is a Python-friendly interface to the Microsemi/Microchip Switchtec PCIe switch management library (`switchtec-user` 4.4-rc2, 200+ API functions). Built for **PCIe Validation Engineers** who perform eye diagrams, LTSSM analysis, loopback testing, pattern generation and monitoring, error injection, and receiver characterization.
 
 Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of PCIe test equipment and interposer solutions.
 
@@ -37,7 +37,7 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 
 **ctypes Bindings Layer** -- Zero-dependency wrapping of the Switchtec C shared library with platform-aware loading (Linux `.so`, Windows `.dll`). Provides typed function prototypes, C struct definitions, and IntEnum constants mapped directly from C headers.
 
-**Click CLI** (`switchtec-cli`) -- Full-featured command-line interface with human-readable output, `--json-output` mode for scripting, and `--debug` logging. Covers device discovery, port status, diagnostics, and error injection.
+**Click CLI** (`athena`) -- Full-featured command-line interface with human-readable output, `--json-output` mode for scripting, and `--debug` logging. Covers device discovery, port status, diagnostics, and error injection.
 
 **FastAPI REST API** -- Async HTTP API with auto-generated OpenAPI documentation, API key authentication, input validation via Pydantic, WebSocket support for streaming diagnostics, and restricted CORS.
 
@@ -171,13 +171,13 @@ pip install -e ".[dev,all]"
 ### 1. Verify library loading
 
 ```bash
-switchtec-cli --version
+athena --version
 ```
 
 ### 2. Discover devices
 
 ```bash
-switchtec-cli device list
+athena device list
 ```
 
 ```
@@ -187,7 +187,7 @@ switchtec-cli device list
 ### 3. Read device information
 
 ```bash
-switchtec-cli device info /dev/switchtec0
+athena device info /dev/switchtec0
 ```
 
 ```
@@ -205,7 +205,7 @@ Ports:       48
 
 ```bash
 pip install "serialcables-switchtec[all]"
-switchtec-cli serve
+athena serve
 ```
 
 Open `http://127.0.0.1:8000` in a browser for the NiceGUI dashboard. API documentation is available at `http://127.0.0.1:8000/docs`.
@@ -214,10 +214,10 @@ Open `http://127.0.0.1:8000` in a browser for the NiceGUI dashboard. API documen
 
 ## CLI Reference
 
-The CLI entry point is `switchtec-cli`. All commands support `--debug` for verbose logging and `--json-output` for machine-readable output.
+The CLI entry point is `athena`. All commands support `--debug` for verbose logging and `--json-output` for machine-readable output.
 
 ```bash
-switchtec-cli --help
+athena --help
 ```
 
 ### Global Options
@@ -232,16 +232,16 @@ switchtec-cli --help
 
 ```bash
 # List all Switchtec devices
-switchtec-cli device list
+athena device list
 
 # Show detailed device information
-switchtec-cli device info /dev/switchtec0
+athena device info /dev/switchtec0
 
 # Read die temperature
-switchtec-cli device temp /dev/switchtec0
+athena device temp /dev/switchtec0
 
 # Show port status table
-switchtec-cli device status /dev/switchtec0
+athena device status /dev/switchtec0
 ```
 
 Port status output:
@@ -258,98 +258,98 @@ Port status output:
 **Eye diagram:**
 
 ```bash
-switchtec-cli diag eye /dev/switchtec0 --lanes 1,0,0,0 --x-step 1 --y-step 2
+athena diag eye /dev/switchtec0 --lanes 1,0,0,0 --x-step 1 --y-step 2
 ```
 
 **LTSSM log:**
 
 ```bash
 # Dump LTSSM state log for port 0
-switchtec-cli diag ltssm /dev/switchtec0 0
+athena diag ltssm /dev/switchtec0 0
 
 # Clear LTSSM log
-switchtec-cli diag ltssm-clear /dev/switchtec0 0
+athena diag ltssm-clear /dev/switchtec0 0
 ```
 
 **Loopback:**
 
 ```bash
 # Enable loopback at Gen4 speed on port 0
-switchtec-cli diag loopback /dev/switchtec0 0 --enable --ltssm-speed gen4
+athena diag loopback /dev/switchtec0 0 --enable --ltssm-speed gen4
 
 # Disable loopback
-switchtec-cli diag loopback /dev/switchtec0 0 --disable
+athena diag loopback /dev/switchtec0 0 --disable
 ```
 
 **Pattern generation and monitoring:**
 
 ```bash
 # Set PRBS31 pattern generator at Gen4 on port 0
-switchtec-cli diag patgen /dev/switchtec0 0 --pattern prbs31 --speed gen4
+athena diag patgen /dev/switchtec0 0 --pattern prbs31 --speed gen4
 
 # Read pattern monitor results for port 0, lane 0
-switchtec-cli diag patmon /dev/switchtec0 0 0
+athena diag patmon /dev/switchtec0 0 0
 ```
 
 **Receiver characterization:**
 
 ```bash
 # Dump receiver calibration object for port 0, lane 0
-switchtec-cli diag rcvr /dev/switchtec0 0 0 --link current
+athena diag rcvr /dev/switchtec0 0 0 --link current
 ```
 
 **Port equalization:**
 
 ```bash
 # Dump TX coefficients for port 0 (local end, current link)
-switchtec-cli diag eq /dev/switchtec0 0 --end local --link current
+athena diag eq /dev/switchtec0 0 --end local --link current
 ```
 
 **Cross-hair measurement:**
 
 ```bash
 # Enable cross-hair on lane 0
-switchtec-cli diag crosshair /dev/switchtec0 --lane 0 --action enable
+athena diag crosshair /dev/switchtec0 --lane 0 --action enable
 
 # Get cross-hair results for all lanes
-switchtec-cli diag crosshair /dev/switchtec0 --action get
+athena diag crosshair /dev/switchtec0 --action get
 
 # Disable cross-hair
-switchtec-cli diag crosshair /dev/switchtec0 --action disable
+athena diag crosshair /dev/switchtec0 --action disable
 ```
 
 ### Error Injection Commands
 
-All error injection commands are under `switchtec-cli diag inject`.
+All error injection commands are under `athena diag inject`.
 
 ```bash
 # Inject a raw DLLP on port 0
-switchtec-cli diag inject dllp /dev/switchtec0 0 --data 0xDEAD
+athena diag inject dllp /dev/switchtec0 0 --data 0xDEAD
 
 # Enable DLLP CRC error injection
-switchtec-cli diag inject dllp-crc /dev/switchtec0 0 --enable --rate 1
+athena diag inject dllp-crc /dev/switchtec0 0 --enable --rate 1
 
 # Enable TLP LCRC error injection
-switchtec-cli diag inject tlp-lcrc /dev/switchtec0 0 --enable --rate 1
+athena diag inject tlp-lcrc /dev/switchtec0 0 --enable --rate 1
 
 # Inject TLP sequence number error
-switchtec-cli diag inject seq-num /dev/switchtec0 0
+athena diag inject seq-num /dev/switchtec0 0
 
 # Inject ACK/NACK errors
-switchtec-cli diag inject ack-nack /dev/switchtec0 0 --seq-num 42 --count 5
+athena diag inject ack-nack /dev/switchtec0 0 --seq-num 42 --count 5
 
 # Inject completion timeout
-switchtec-cli diag inject cto /dev/switchtec0 0
+athena diag inject cto /dev/switchtec0 0
 ```
 
 ### Server Command
 
 ```bash
 # Start API + dashboard on default host/port (127.0.0.1:8000)
-switchtec-cli serve
+athena serve
 
 # Bind to all interfaces on a custom port
-switchtec-cli serve --host 0.0.0.0 --port 9000
+athena serve --host 0.0.0.0 --port 9000
 ```
 
 ---
@@ -364,7 +364,7 @@ Set the `SWITCHTEC_API_KEY` environment variable before starting the server. All
 
 ```bash
 export SWITCHTEC_API_KEY="your-secret-key"
-switchtec-cli serve
+athena serve
 ```
 
 ```bash
@@ -402,7 +402,7 @@ The API supports WebSocket connections for streaming long-running diagnostic dat
 
 ## Browser Dashboard
 
-The NiceGUI dashboard provides a browser-based interface for device management and diagnostics. It starts automatically with `switchtec-cli serve`.
+The Athena NiceGUI dashboard provides a browser-based interface for device management and diagnostics, branded with the Serial Cables logo. It starts automatically with `athena serve`.
 
 **Pages:**
 
@@ -593,9 +593,11 @@ src/serialcables_switchtec/
 |       +-- diagnostics.py      # Diagnostics endpoints
 |
 |-- ui/                         # NiceGUI browser dashboard
-|   |-- main.py                 # Page registration
+|   |-- main.py                 # Page registration, static file serving
 |   |-- theme.py                # Dark theme, Serial Cables branding
-|   |-- layout.py               # Shared page scaffold
+|   |-- layout.py               # Shared page scaffold with logo header
+|   |-- static/                 # Static assets
+|   |   +-- logo.png            # Serial Cables logo (white, transparent)
 |   |-- components/             # Reusable UI components
 |   |   |-- device_card.py
 |   |   |-- port_grid.py

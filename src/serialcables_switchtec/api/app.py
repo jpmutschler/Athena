@@ -40,9 +40,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
-        title="Serial Cables Switchtec API",
+        title="Athena API",
         description=(
-            "Serial Cables Gen6 PCIe Switchtec Host Card"
+            "Athena -- Serial Cables Gen6 PCIe Switchtec Host Card"
             " Management Interface"
         ),
         version="0.1.0",
