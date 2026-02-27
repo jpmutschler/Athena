@@ -10,7 +10,7 @@ class Colors:
     """Centralized color palette for Athena dashboard."""
 
     # Accent colors
-    cyan: str = "#00d4ff"
+    accent: str = "#39d353"
     blue: str = "#58a6ff"
     purple: str = "#bc8cff"
 
@@ -53,7 +53,7 @@ def apply_dark_theme() -> str:
     return f"""
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
     :root {{
-        --sc-cyan: {COLORS.cyan};
+        --sc-accent: {COLORS.accent};
         --sc-bg-primary: {COLORS.bg_primary};
         --sc-bg-secondary: {COLORS.bg_secondary};
         --sc-bg-card: {COLORS.bg_card};

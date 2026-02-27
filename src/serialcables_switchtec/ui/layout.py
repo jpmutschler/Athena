@@ -21,7 +21,7 @@ def page_layout(title: str = "Dashboard") -> Generator[None, None, None]:
                 "width: 32px; height: 32px;"
             )
             ui.label("ATHENA").classes("text-h6 text-bold").style(
-                f"color: {COLORS.cyan}; letter-spacing: 0.15em;"
+                f"color: {COLORS.accent}; letter-spacing: 0.15em;"
             )
             ui.label("|").style(f"color: {COLORS.text_muted};")
             ui.label("Serial Cables Switchtec Switch Manager").classes(
@@ -37,22 +37,22 @@ def page_layout(title: str = "Dashboard") -> Generator[None, None, None]:
             f"color: {COLORS.text_primary};"
         )
         ui.link("Discovery", "/").classes("q-mb-sm block").style(
-            f"color: {COLORS.cyan}; text-decoration: none;"
+            f"color: {COLORS.accent}; text-decoration: none;"
         )
         ui.link("Dashboard", "/dashboard").classes("q-mb-sm block").style(
-            f"color: {COLORS.cyan}; text-decoration: none;"
+            f"color: {COLORS.accent}; text-decoration: none;"
         )
         ui.link("Ports", "/ports").classes("q-mb-sm block").style(
-            f"color: {COLORS.cyan}; text-decoration: none;"
+            f"color: {COLORS.accent}; text-decoration: none;"
         )
         ui.link("Eye Diagram", "/eye").classes("q-mb-sm block").style(
-            f"color: {COLORS.cyan}; text-decoration: none;"
+            f"color: {COLORS.accent}; text-decoration: none;"
         )
         ui.link("LTSSM Trace", "/ltssm").classes("q-mb-sm block").style(
-            f"color: {COLORS.cyan}; text-decoration: none;"
+            f"color: {COLORS.accent}; text-decoration: none;"
         )
         ui.link("Performance", "/performance").classes("q-mb-sm block").style(
-            f"color: {COLORS.cyan}; text-decoration: none;"
+            f"color: {COLORS.accent}; text-decoration: none;"
         )
 
     with ui.column().classes("w-full q-pa-md"):
