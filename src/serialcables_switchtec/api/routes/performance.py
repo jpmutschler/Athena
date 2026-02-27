@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from serialcables_switchtec.api.dependencies import DEVICE_ID_PATTERN, get_device
 from serialcables_switchtec.api.error_handlers import raise_on_error
-from serialcables_switchtec.core.performance import PerformanceManager
 from serialcables_switchtec.models.performance import BwCounterResult, LatencyResult
 
 router = APIRouter()
@@ -37,7 +36,7 @@ def get_bandwidth(
     """Get bandwidth counters for specified ports."""
     dev = get_device(device_id)
     try:
-        mgr = PerformanceManager(dev)
+        mgr = dev.performance
         return mgr.bw_get(request.port_ids, clear=request.clear)
     except Exception as e:
         raise_on_error(e, "bw_get")
@@ -57,7 +56,7 @@ def latency_setup(
     """Configure latency measurement between two ports."""
     dev = get_device(device_id)
     try:
-        mgr = PerformanceManager(dev)
+        mgr = dev.performance
         mgr.lat_setup(
             request.egress_port_id,
             request.ingress_port_id,
@@ -80,7 +79,7 @@ def get_latency(
     """Get latency measurement for an egress port."""
     dev = get_device(device_id)
     try:
-        mgr = PerformanceManager(dev)
+        mgr = dev.performance
         return mgr.lat_get(egress_port_id, clear=clear)
     except Exception as e:
         raise_on_error(e, "lat_get")

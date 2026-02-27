@@ -5,8 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel, Field, field_validator
 
-from serialcables_switchtec.api.dependencies import DEVICE_ID_PATTERN
+from serialcables_switchtec.api.dependencies import DEVICE_ID_PATTERN, get_device
 from serialcables_switchtec.api.error_handlers import raise_on_error
+from serialcables_switchtec.api.rate_limit import hard_reset_limiter
 from serialcables_switchtec.api.state import (
     DEVICE_PATH_PATTERN,
     get_device_registry,
@@ -63,7 +64,7 @@ def discover_devices() -> list[dict]:
     "/{device_id}/open",
     response_model=DeviceSummary,
 )
-async def open_device(
+def open_device(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     request: OpenDeviceRequest = ...,
 ) -> DeviceSummary:
@@ -71,11 +72,11 @@ async def open_device(
     registry = get_device_registry()
     lock = get_registry_lock()
 
-    async with lock:
+    with lock:
         if device_id in registry:
             raise HTTPException(
                 status_code=409,
-                detail=f"Device {device_id} already open",
+                detail="Device already open",
             )
 
         try:
@@ -87,19 +88,19 @@ async def open_device(
 
 
 @router.delete("/{device_id}")
-async def close_device(
+def close_device(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> dict[str, str]:
     """Close an open device and remove it from the registry."""
     registry = get_device_registry()
     lock = get_registry_lock()
 
-    async with lock:
+    with lock:
         entry = registry.pop(device_id, None)
         if entry is None:
             raise HTTPException(
                 status_code=404,
-                detail=f"Device {device_id} not found",
+                detail="Device not found",
             )
 
     dev, _path = entry
@@ -117,14 +118,7 @@ def get_device_info(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> DeviceSummary:
     """Get summary information for an open device."""
-    registry = get_device_registry()
-    entry = registry.get(device_id)
-    if entry is None:
-        raise HTTPException(
-            status_code=404, detail=f"Device {device_id} not found"
-        )
-
-    dev, _path = entry
+    dev = get_device(device_id)
     try:
         return dev.get_summary()
     except Exception as e:
@@ -138,7 +132,7 @@ class HardResetRequest(BaseModel):
 
 
 @router.post("/{device_id}/hard-reset")
-async def hard_reset(
+def hard_reset(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     request: HardResetRequest = ...,
 ) -> dict[str, str]:
@@ -148,6 +142,8 @@ async def hard_reset(
     The device handle becomes invalid and the device is removed from the registry.
     Requires ``confirm: true`` in the request body.
     """
+    hard_reset_limiter.check(device_id)
+
     if not request.confirm:
         raise HTTPException(
             status_code=400,
@@ -157,17 +153,16 @@ async def hard_reset(
     registry = get_device_registry()
     lock = get_registry_lock()
 
-    async with lock:
+    with lock:
         entry = registry.pop(device_id, None)
         if entry is None:
             raise HTTPException(
-                status_code=404, detail=f"Device {device_id} not found"
+                status_code=404, detail="Device not found"
             )
 
     dev, _path = entry
     try:
         dev.hard_reset()
-        dev._closed = True
         return {"status": "reset", "device_id": device_id}
     except Exception as e:
         raise_on_error(e, "hard_reset")
@@ -178,14 +173,7 @@ def get_temperature(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
 ) -> dict[str, float]:
     """Get die temperature for an open device."""
-    registry = get_device_registry()
-    entry = registry.get(device_id)
-    if entry is None:
-        raise HTTPException(
-            status_code=404, detail=f"Device {device_id} not found"
-        )
-
-    dev, _path = entry
+    dev = get_device(device_id)
     try:
         return {"temperature_c": dev.die_temperature}
     except Exception as e:

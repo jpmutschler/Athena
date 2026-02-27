@@ -142,6 +142,19 @@ class FakeLibrary:
         return 0
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """Clear all API rate limiter state between tests."""
+    from serialcables_switchtec.api.rate_limit import (
+        fabric_control_limiter,
+        hard_reset_limiter,
+        injection_limiter,
+    )
+    hard_reset_limiter.reset()
+    injection_limiter.reset()
+    fabric_control_limiter.reset()
+
+
 @pytest.fixture
 def fake_lib():
     """Provide a FakeLibrary instance."""

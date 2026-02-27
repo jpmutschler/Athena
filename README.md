@@ -40,7 +40,7 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 
 **Click CLI** (`athena`) -- Full-featured command-line interface with human-readable output, `--json-output` mode for scripting, and `--debug` logging. Covers device discovery, port status, diagnostics, error injection, firmware management, events, fabric topology, and performance monitoring.
 
-**FastAPI REST API** -- HTTP API with auto-generated OpenAPI documentation, API key authentication, input validation via Pydantic, WebSocket support for streaming diagnostics, and restricted CORS.
+**FastAPI REST API** -- HTTP API with auto-generated OpenAPI documentation, API key authentication, input validation via Pydantic, rate limiting on destructive endpoints, WebSocket support for streaming diagnostics, and restricted CORS.
 
 **NiceGUI Browser Dashboard** -- Dark-themed browser UI with Serial Cables branding. Provides real-time device cards, port grids, eye diagram charts, LTSSM timeline visualization, and performance monitoring.
 
@@ -66,7 +66,7 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 
 **Performance Monitoring** -- Bandwidth counters per port (egress/ingress posted, completion, non-posted) and latency measurement between port pairs.
 
-**Security** -- API key authentication via `SWITCHTEC_API_KEY` environment variable with constant-time comparison (`hmac.compare_digest`), localhost-only binding by default, restricted CORS origins, Pydantic input validation on all API endpoints, firmware upload size limits (64 MB), and port/lane ID range validation throughout CLI and API.
+**Security** -- API key authentication via `SWITCHTEC_API_KEY` environment variable with constant-time comparison (`hmac.compare_digest`), localhost-only binding by default, restricted CORS origins, Pydantic input validation on all API endpoints, firmware upload size limits (64 MB), port/lane ID range validation, rate limiting on destructive endpoints (hard reset, error injection, fabric control), sanitized error messages that never leak internal details, and thread-safe device access with per-device operation locks.
 
 ---
 
@@ -87,8 +87,8 @@ NiceGUI Dashboard / Click CLI
 Each layer has a single responsibility:
 
 - **CLI / UI** -- User-facing interfaces. The CLI outputs human-readable text or JSON. The dashboard renders live charts and tables.
-- **REST API** -- Stateless HTTP endpoints with an async device registry, input validation, and structured error responses. Shared dependencies (device lookup, constants) are centralized in `api/dependencies.py`.
-- **Core Domain** -- Business logic classes (`SwitchtecDevice`, `DiagnosticsManager`, `ErrorInjector`, `FirmwareManager`, `EventManager`, `FabricManager`, `PerformanceManager`, `OrderedSetAnalyzer`) that wrap C library calls and return immutable Pydantic models. Managers are accessible as lazy properties on the device (e.g., `dev.diagnostics`, `dev.firmware`, `dev.performance`).
+- **REST API** -- Thread-safe HTTP endpoints with a device registry protected by `threading.Lock`, input validation, rate limiting on destructive operations, sanitized error responses, and shared dependencies centralized in `api/dependencies.py`. Blocking C library calls run in FastAPI's thread pool; long-running operations (firmware write, event wait) use dedicated executors.
+- **Core Domain** -- Business logic classes (`SwitchtecDevice`, `DiagnosticsManager`, `ErrorInjector`, `FirmwareManager`, `EventManager`, `FabricManager`, `PerformanceManager`, `OrderedSetAnalyzer`, `EventCounterManager`) that wrap C library calls and return immutable Pydantic models. Managers are accessible as thread-safe lazy properties on the device (e.g., `dev.diagnostics`, `dev.firmware`, `dev.performance`) with double-checked locking.
 - **Bindings** -- Platform-aware CDLL loader, ctypes `Structure` definitions matching C structs (`_pack_ = 1` for MRPC structs), function prototypes with `argtypes`/`restype`, and IntEnum constants from C headers.
 
 ---
@@ -1028,9 +1028,10 @@ src/serialcables_switchtec/
 |
 |-- api/                        # FastAPI REST + WebSocket API
 |   |-- app.py                  # Application factory, CORS, lifespan, auth
-|   |-- state.py                # Device registry, asyncio.Lock, API key auth
+|   |-- state.py                # Device registry, threading.Lock, API key auth
 |   |-- dependencies.py         # Shared helpers: get_device(), DEVICE_ID_PATTERN
-|   |-- error_handlers.py       # Exception-to-HTTP status mapping
+|   |-- error_handlers.py       # Exception-to-HTTP status mapping with sanitized messages
+|   |-- rate_limit.py           # Per-device rate limiting for destructive endpoints
 |   +-- routes/                 # Route modules
 |       |-- devices.py          # Device management + hard-reset endpoints
 |       |-- ports.py            # Port status endpoints
@@ -1105,7 +1106,7 @@ pytest tests/ -v
 pytest tests/ -v --cov=serialcables_switchtec --cov-report=term-missing
 ```
 
-**Current status:** 836 tests (unit, integration, and end-to-end). Coverage is at 84%. The UI layer requires a NiceGUI runtime and is not covered by automated tests.
+**Current status:** 836 tests across unit, integration, and end-to-end suites organized by domain (device, diagnostics, firmware, events, fabric, performance, error handlers). Coverage is at 84%. The UI layer requires a NiceGUI runtime and is not covered by automated tests.
 
 ---
 

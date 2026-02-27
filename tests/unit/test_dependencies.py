@@ -88,7 +88,7 @@ class TestGetDeviceNotFound:
             get_device("nonexistent")
 
         assert exc_info.value.status_code == 404
-        assert "nonexistent" in exc_info.value.detail
+        assert exc_info.value.detail == "Device not found"
 
     @patch("serialcables_switchtec.api.dependencies.get_device_registry")
     def test_raises_404_with_populated_registry(
@@ -104,18 +104,20 @@ class TestGetDeviceNotFound:
             get_device("wrong_id")
 
         assert exc_info.value.status_code == 404
-        assert "wrong_id" in exc_info.value.detail
+        assert exc_info.value.detail == "Device not found"
 
     @patch("serialcables_switchtec.api.dependencies.get_device_registry")
-    def test_detail_message_includes_device_id(
+    def test_detail_message_does_not_leak_device_id(
         self, mock_registry_fn
     ) -> None:
+        """The error detail should not contain the device ID."""
         mock_registry_fn.return_value = {}
 
         with pytest.raises(HTTPException) as exc_info:
             get_device("my-special-device")
 
-        assert "my-special-device" in exc_info.value.detail
+        assert "my-special-device" not in exc_info.value.detail
+        assert exc_info.value.detail == "Device not found"
 
     @patch("serialcables_switchtec.api.dependencies.get_device_registry")
     def test_empty_string_device_id(self, mock_registry_fn) -> None:

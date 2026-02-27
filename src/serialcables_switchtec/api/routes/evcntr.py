@@ -6,7 +6,6 @@ from fastapi import APIRouter, Path, Query
 
 from serialcables_switchtec.api.dependencies import DEVICE_ID_PATTERN, get_device
 from serialcables_switchtec.api.error_handlers import raise_on_error
-from serialcables_switchtec.core.evcntr import EventCounterManager
 from serialcables_switchtec.models.evcntr import (
     EvCntrSetupRequest,
     EvCntrSetupResult,
@@ -26,7 +25,7 @@ def evcntr_setup(
     """Configure an event counter."""
     dev = get_device(device_id)
     try:
-        mgr = EventCounterManager(dev)
+        mgr = dev.evcntr
         mgr.setup(
             stack_id, counter_id,
             request.port_mask, request.type_mask,
@@ -50,7 +49,7 @@ def evcntr_get_setup(
     """Read event counter setup configuration."""
     dev = get_device(device_id)
     try:
-        mgr = EventCounterManager(dev)
+        mgr = dev.evcntr
         return mgr.get_setup(stack_id, counter_id, nr_counters)
     except Exception as e:
         raise_on_error(e, "evcntr_get_setup")
@@ -67,7 +66,7 @@ def evcntr_get_counts(
     """Read event counter values."""
     dev = get_device(device_id)
     try:
-        mgr = EventCounterManager(dev)
+        mgr = dev.evcntr
         counts = mgr.get_counts(stack_id, counter_id, nr_counters, clear=clear)
         return {
             "counters": [
@@ -93,7 +92,7 @@ def evcntr_get_both(
     """Read event counter values with setup configuration."""
     dev = get_device(device_id)
     try:
-        mgr = EventCounterManager(dev)
+        mgr = dev.evcntr
         return mgr.get_both(stack_id, counter_id, nr_counters, clear=clear)
     except Exception as e:
         raise_on_error(e, "evcntr_get_both")

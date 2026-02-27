@@ -68,18 +68,21 @@ _PHASE_NAMES = {
 }
 
 
-_prototypes_configured = False
+_cached_lib: ctypes.CDLL | None = None
 _lib_init_lock = threading.Lock()
 
 
 def _ensure_library() -> ctypes.CDLL:
     """Load and configure the library if not already done."""
-    global _prototypes_configured
+    global _cached_lib
+    if _cached_lib is not None:
+        return _cached_lib
     with _lib_init_lock:
+        if _cached_lib is not None:
+            return _cached_lib
         lib = load_library()
-        if not _prototypes_configured:
-            setup_prototypes(lib)
-            _prototypes_configured = True
+        setup_prototypes(lib)
+        _cached_lib = lib
         return lib
 
 
@@ -96,6 +99,8 @@ class SwitchtecDevice:
         self._handle = handle
         self._lib = lib
         self._closed = False
+        self._mgr_lock = threading.Lock()
+        self._op_lock = threading.Lock()
         self._diagnostics_mgr: DiagnosticsManager | None = None
         self._evcntr_mgr: EventCounterManager | None = None
         self._events_mgr: EventManager | None = None
@@ -178,63 +183,77 @@ class SwitchtecDevice:
     def diagnostics(self) -> DiagnosticsManager:
         """Access diagnostics operations."""
         if self._diagnostics_mgr is None:
-            from serialcables_switchtec.core.diagnostics import DiagnosticsManager
+            with self._mgr_lock:
+                if self._diagnostics_mgr is None:
+                    from serialcables_switchtec.core.diagnostics import DiagnosticsManager
 
-            self._diagnostics_mgr = DiagnosticsManager(self)
+                    self._diagnostics_mgr = DiagnosticsManager(self)
         return self._diagnostics_mgr
 
     @property
     def evcntr(self) -> EventCounterManager:
         """Access event counter operations."""
         if self._evcntr_mgr is None:
-            from serialcables_switchtec.core.evcntr import EventCounterManager
+            with self._mgr_lock:
+                if self._evcntr_mgr is None:
+                    from serialcables_switchtec.core.evcntr import EventCounterManager
 
-            self._evcntr_mgr = EventCounterManager(self)
+                    self._evcntr_mgr = EventCounterManager(self)
         return self._evcntr_mgr
 
     @property
     def events(self) -> EventManager:
         """Access event management operations."""
         if self._events_mgr is None:
-            from serialcables_switchtec.core.events import EventManager
+            with self._mgr_lock:
+                if self._events_mgr is None:
+                    from serialcables_switchtec.core.events import EventManager
 
-            self._events_mgr = EventManager(self)
+                    self._events_mgr = EventManager(self)
         return self._events_mgr
 
     @property
     def firmware(self) -> FirmwareManager:
         """Access firmware management operations."""
         if self._firmware_mgr is None:
-            from serialcables_switchtec.core.firmware import FirmwareManager
+            with self._mgr_lock:
+                if self._firmware_mgr is None:
+                    from serialcables_switchtec.core.firmware import FirmwareManager
 
-            self._firmware_mgr = FirmwareManager(self)
+                    self._firmware_mgr = FirmwareManager(self)
         return self._firmware_mgr
 
     @property
     def fabric(self) -> FabricManager:
         """Access fabric/topology operations (PAX devices only)."""
         if self._fabric_mgr is None:
-            from serialcables_switchtec.core.fabric import FabricManager
+            with self._mgr_lock:
+                if self._fabric_mgr is None:
+                    from serialcables_switchtec.core.fabric import FabricManager
 
-            self._fabric_mgr = FabricManager(self)
+                    self._fabric_mgr = FabricManager(self)
         return self._fabric_mgr
 
     @property
     def osa(self) -> OrderedSetAnalyzer:
         """Access Ordered Set Analyzer operations."""
         if self._osa_mgr is None:
-            from serialcables_switchtec.core.osa import OrderedSetAnalyzer
+            with self._mgr_lock:
+                if self._osa_mgr is None:
+                    from serialcables_switchtec.core.osa import OrderedSetAnalyzer
 
-            self._osa_mgr = OrderedSetAnalyzer(self)
+                    self._osa_mgr = OrderedSetAnalyzer(self)
         return self._osa_mgr
 
     @property
     def performance(self) -> PerformanceManager:
         """Access performance monitoring operations."""
         if self._performance_mgr is None:
-            from serialcables_switchtec.core.performance import PerformanceManager
+            with self._mgr_lock:
+                if self._performance_mgr is None:
+                    from serialcables_switchtec.core.performance import PerformanceManager
 
-            self._performance_mgr = PerformanceManager(self)
+                    self._performance_mgr = PerformanceManager(self)
         return self._performance_mgr
 
     @property
@@ -401,6 +420,7 @@ class SwitchtecDevice:
         """
         ret = self._lib.switchtec_hard_reset(self.handle)
         check_error(ret, "hard_reset")
+        self._closed = True
         logger.info("device_hard_reset")
 
     def get_summary(self) -> DeviceSummary:

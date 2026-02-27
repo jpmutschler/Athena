@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path as FilePath
 
 from fastapi import APIRouter, HTTPException, Path, UploadFile
@@ -10,10 +13,13 @@ from pydantic import BaseModel
 
 from serialcables_switchtec.api.dependencies import DEVICE_ID_PATTERN, get_device
 from serialcables_switchtec.api.error_handlers import raise_on_error
-from serialcables_switchtec.core.firmware import FirmwareManager
 from serialcables_switchtec.models.firmware import FwPartSummary
 
 router = APIRouter()
+
+_firmware_write_executor = ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="fw-write"
+)
 
 MAX_FIRMWARE_UPLOAD_SIZE = 64 * 1024 * 1024  # 64 MB
 
@@ -39,7 +45,7 @@ def get_fw_version(
     """Get the current firmware version string."""
     dev = get_device(device_id)
     try:
-        mgr = FirmwareManager(dev)
+        mgr = dev.firmware
         version = mgr.get_fw_version()
         return {"version": version}
     except Exception as e:
@@ -54,7 +60,7 @@ def toggle_active_partition(
     """Toggle the active firmware partition."""
     dev = get_device(device_id)
     try:
-        mgr = FirmwareManager(dev)
+        mgr = dev.firmware
         mgr.toggle_active_partition(
             toggle_bl2=request.toggle_bl2,
             toggle_key=request.toggle_key,
@@ -74,7 +80,7 @@ def get_boot_ro(
     """Check if boot partition is read-only."""
     dev = get_device(device_id)
     try:
-        mgr = FirmwareManager(dev)
+        mgr = dev.firmware
         ro = mgr.is_boot_ro()
         return {"read_only": ro}
     except Exception as e:
@@ -89,7 +95,7 @@ def set_boot_ro(
     """Set boot partition read-only flag."""
     dev = get_device(device_id)
     try:
-        mgr = FirmwareManager(dev)
+        mgr = dev.firmware
         mgr.set_boot_ro(read_only=request.read_only)
         return {"status": "ok"}
     except Exception as e:
@@ -125,11 +131,16 @@ async def write_firmware(
                     )
                 tmp.write(chunk)
 
-        mgr = FirmwareManager(dev)
-        mgr.write_firmware(
-            tmp_path,
-            dont_activate=dont_activate,
-            force=force,
+        mgr = dev.firmware
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            _firmware_write_executor,
+            partial(
+                mgr.write_firmware,
+                tmp_path,
+                dont_activate=dont_activate,
+                force=force,
+            ),
         )
         return {"status": "written", "filename": file.filename or "unknown"}
     except HTTPException:
@@ -151,7 +162,7 @@ def get_fw_summary(
     """Get a summary of all firmware partitions."""
     dev = get_device(device_id)
     try:
-        mgr = FirmwareManager(dev)
+        mgr = dev.firmware
         return mgr.get_part_summary()
     except Exception as e:
         raise_on_error(e, "get_fw_summary")

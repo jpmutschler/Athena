@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -103,11 +103,8 @@ class TestBandwidthRoute:
         )
         assert response.status_code == 404
 
-    @patch("serialcables_switchtec.api.routes.performance.PerformanceManager")
-    def test_bw_success(self, mock_perf_cls, client, registered_device) -> None:
-        mock_mgr = MagicMock()
-        mock_mgr.bw_get.return_value = _sample_bw_results([0, 1])
-        mock_perf_cls.return_value = mock_mgr
+    def test_bw_success(self, client, registered_device) -> None:
+        registered_device.performance.bw_get.return_value = _sample_bw_results([0, 1])
 
         response = client.post(
             "/api/devices/testdev/perf/bw",
@@ -121,13 +118,10 @@ class TestBandwidthRoute:
         assert data[0]["time_us"] == 1000
         assert data[0]["egress"]["posted"] == 100
         assert data[1]["time_us"] == 2000
-        mock_mgr.bw_get.assert_called_once_with([0, 1], clear=False)
+        registered_device.performance.bw_get.assert_called_once_with([0, 1], clear=False)
 
-    @patch("serialcables_switchtec.api.routes.performance.PerformanceManager")
-    def test_bw_with_clear(self, mock_perf_cls, client, registered_device) -> None:
-        mock_mgr = MagicMock()
-        mock_mgr.bw_get.return_value = _sample_bw_results([5])
-        mock_perf_cls.return_value = mock_mgr
+    def test_bw_with_clear(self, client, registered_device) -> None:
+        registered_device.performance.bw_get.return_value = _sample_bw_results([5])
 
         response = client.post(
             "/api/devices/testdev/perf/bw",
@@ -135,7 +129,7 @@ class TestBandwidthRoute:
         )
 
         assert response.status_code == 200
-        mock_mgr.bw_get.assert_called_once_with([5], clear=True)
+        registered_device.performance.bw_get.assert_called_once_with([5], clear=True)
 
     def test_bw_empty_port_ids_rejected(self, client, registered_device) -> None:
         """Empty port_ids list should be rejected by validation (min_length=1)."""
@@ -153,13 +147,8 @@ class TestBandwidthRoute:
         )
         assert response.status_code == 422
 
-    @patch("serialcables_switchtec.api.routes.performance.PerformanceManager")
-    def test_bw_error_returns_500(
-        self, mock_perf_cls, client, registered_device
-    ) -> None:
-        mock_mgr = MagicMock()
-        mock_mgr.bw_get.side_effect = SwitchtecError("hardware failure")
-        mock_perf_cls.return_value = mock_mgr
+    def test_bw_error_returns_500(self, client, registered_device) -> None:
+        registered_device.performance.bw_get.side_effect = SwitchtecError("hardware failure")
 
         response = client.post(
             "/api/devices/testdev/perf/bw",
@@ -167,7 +156,7 @@ class TestBandwidthRoute:
         )
 
         assert response.status_code == 500
-        assert "hardware failure" in response.json()["detail"]
+        assert response.json()["detail"] == "Operation failed"
 
 
 # ===========================================================================
@@ -185,13 +174,7 @@ class TestLatencySetupRoute:
         )
         assert response.status_code == 404
 
-    @patch("serialcables_switchtec.api.routes.performance.PerformanceManager")
-    def test_latency_setup_success(
-        self, mock_perf_cls, client, registered_device
-    ) -> None:
-        mock_mgr = MagicMock()
-        mock_perf_cls.return_value = mock_mgr
-
+    def test_latency_setup_success(self, client, registered_device) -> None:
         response = client.post(
             "/api/devices/testdev/perf/latency/setup",
             json={"egress_port_id": 1, "ingress_port_id": 2, "clear": False},
@@ -200,22 +183,16 @@ class TestLatencySetupRoute:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "configured"
-        mock_mgr.lat_setup.assert_called_once_with(1, 2, clear=False)
+        registered_device.performance.lat_setup.assert_called_once_with(1, 2, clear=False)
 
-    @patch("serialcables_switchtec.api.routes.performance.PerformanceManager")
-    def test_latency_setup_with_clear(
-        self, mock_perf_cls, client, registered_device
-    ) -> None:
-        mock_mgr = MagicMock()
-        mock_perf_cls.return_value = mock_mgr
-
+    def test_latency_setup_with_clear(self, client, registered_device) -> None:
         response = client.post(
             "/api/devices/testdev/perf/latency/setup",
             json={"egress_port_id": 3, "ingress_port_id": 4, "clear": True},
         )
 
         assert response.status_code == 200
-        mock_mgr.lat_setup.assert_called_once_with(3, 4, clear=True)
+        registered_device.performance.lat_setup.assert_called_once_with(3, 4, clear=True)
 
     def test_latency_setup_invalid_port_range(
         self, client, registered_device
@@ -237,13 +214,8 @@ class TestLatencySetupRoute:
         )
         assert response.status_code == 422
 
-    @patch("serialcables_switchtec.api.routes.performance.PerformanceManager")
-    def test_latency_setup_error_returns_500(
-        self, mock_perf_cls, client, registered_device
-    ) -> None:
-        mock_mgr = MagicMock()
-        mock_mgr.lat_setup.side_effect = SwitchtecError("setup failed")
-        mock_perf_cls.return_value = mock_mgr
+    def test_latency_setup_error_returns_500(self, client, registered_device) -> None:
+        registered_device.performance.lat_setup.side_effect = SwitchtecError("setup failed")
 
         response = client.post(
             "/api/devices/testdev/perf/latency/setup",
@@ -251,7 +223,7 @@ class TestLatencySetupRoute:
         )
 
         assert response.status_code == 500
-        assert "setup failed" in response.json()["detail"]
+        assert response.json()["detail"] == "Operation failed"
 
 
 # ===========================================================================
@@ -268,13 +240,8 @@ class TestLatencyGetRoute:
         )
         assert response.status_code == 404
 
-    @patch("serialcables_switchtec.api.routes.performance.PerformanceManager")
-    def test_latency_get_success(
-        self, mock_perf_cls, client, registered_device
-    ) -> None:
-        mock_mgr = MagicMock()
-        mock_mgr.lat_get.return_value = _sample_latency_result(5)
-        mock_perf_cls.return_value = mock_mgr
+    def test_latency_get_success(self, client, registered_device) -> None:
+        registered_device.performance.lat_get.return_value = _sample_latency_result(5)
 
         response = client.get(
             "/api/devices/testdev/perf/latency/5"
@@ -285,22 +252,17 @@ class TestLatencyGetRoute:
         assert data["egress_port_id"] == 5
         assert data["current_ns"] == 42
         assert data["max_ns"] == 128
-        mock_mgr.lat_get.assert_called_once_with(5, clear=False)
+        registered_device.performance.lat_get.assert_called_once_with(5, clear=False)
 
-    @patch("serialcables_switchtec.api.routes.performance.PerformanceManager")
-    def test_latency_get_with_clear_query(
-        self, mock_perf_cls, client, registered_device
-    ) -> None:
-        mock_mgr = MagicMock()
-        mock_mgr.lat_get.return_value = _sample_latency_result(3)
-        mock_perf_cls.return_value = mock_mgr
+    def test_latency_get_with_clear_query(self, client, registered_device) -> None:
+        registered_device.performance.lat_get.return_value = _sample_latency_result(3)
 
         response = client.get(
             "/api/devices/testdev/perf/latency/3?clear=true"
         )
 
         assert response.status_code == 200
-        mock_mgr.lat_get.assert_called_once_with(3, clear=True)
+        registered_device.performance.lat_get.assert_called_once_with(3, clear=True)
 
     def test_latency_get_invalid_port_range(
         self, client, registered_device
@@ -320,20 +282,15 @@ class TestLatencyGetRoute:
         )
         assert response.status_code == 422
 
-    @patch("serialcables_switchtec.api.routes.performance.PerformanceManager")
-    def test_latency_get_error_returns_500(
-        self, mock_perf_cls, client, registered_device
-    ) -> None:
-        mock_mgr = MagicMock()
-        mock_mgr.lat_get.side_effect = SwitchtecError("read failed")
-        mock_perf_cls.return_value = mock_mgr
+    def test_latency_get_error_returns_500(self, client, registered_device) -> None:
+        registered_device.performance.lat_get.side_effect = SwitchtecError("read failed")
 
         response = client.get(
             "/api/devices/testdev/perf/latency/0"
         )
 
         assert response.status_code == 500
-        assert "read failed" in response.json()["detail"]
+        assert response.json()["detail"] == "Operation failed"
 
     def test_latency_get_invalid_device_id_pattern(self, client) -> None:
         """Device IDs with invalid characters should fail validation."""

@@ -1,11 +1,11 @@
-"""Shared API state: device registry and async lock."""
+"""Shared API state: device registry and thread-safe lock."""
 
 from __future__ import annotations
 
-import asyncio
 import hmac
 import os
 import re
+import threading
 
 from fastapi import HTTPException, Security
 from fastapi.security import APIKeyHeader
@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 
 # Global device registry: maps device_id to (SwitchtecDevice, path)
 _device_registry: dict[str, tuple[SwitchtecDevice, str]] = {}
-_registry_lock = asyncio.Lock()
+_registry_lock = threading.Lock()
 
 # Device path validation
 DEVICE_PATH_PATTERN = re.compile(
@@ -46,6 +46,6 @@ def get_device_registry() -> dict[str, tuple[SwitchtecDevice, str]]:
     return _device_registry
 
 
-def get_registry_lock() -> asyncio.Lock:
+def get_registry_lock() -> threading.Lock:
     """Get the registry mutation lock."""
     return _registry_lock

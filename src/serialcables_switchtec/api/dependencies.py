@@ -26,7 +26,7 @@ def get_device(device_id: str) -> SwitchtecDevice:
     entry = registry.get(device_id)
     if entry is None:
         raise HTTPException(
-            status_code=404, detail=f"Device {device_id} not found"
+            status_code=404, detail="Device not found"
         )
     dev, _path = entry
     return dev

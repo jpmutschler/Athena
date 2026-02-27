@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from serialcables_switchtec.api.dependencies import DEVICE_ID_PATTERN, get_device
 from serialcables_switchtec.api.error_handlers import raise_on_error
+from serialcables_switchtec.api.rate_limit import fabric_control_limiter
 from serialcables_switchtec.bindings.constants import (
     FabHotResetFlag,
     FabPortControlType,
 )
-from serialcables_switchtec.core.fabric import FabricManager
 from serialcables_switchtec.models.fabric import (
     FabPortConfig,
     GfmsBindRequest,
@@ -31,10 +31,19 @@ class PortControlRequest(BaseModel):
 
 class SetPortConfigRequest(BaseModel):
     port_type: int = Field(default=0, ge=0, le=255)
-    link_width: int = Field(default=0, ge=0, le=255)
+    link_width: int = Field(default=0, ge=0, le=32)
     clock_source: int = Field(default=0, ge=0, le=255)
     clock_sris: int = Field(default=0, ge=0, le=255)
     hvd_inst: int = Field(default=0, ge=0, le=255)
+
+    @field_validator("link_width")
+    @classmethod
+    def validate_link_width(cls, v: int) -> int:
+        if v not in (0, 1, 2, 4, 8, 16, 32):
+            raise ValueError(
+                "link_width must be 0 (no change), 1, 2, 4, 8, 16, or 32"
+            )
+        return v
 
 
 @router.post("/{device_id}/fabric/port-control")
@@ -43,9 +52,10 @@ def port_control(
     request: PortControlRequest = ...,
 ) -> dict[str, str]:
     """Control a fabric port (enable/disable/hot-reset)."""
+    fabric_control_limiter.check(device_id)
     dev = get_device(device_id)
     try:
-        mgr = FabricManager(dev)
+        mgr = dev.fabric
         mgr.port_control(
             phys_port_id=request.phys_port_id,
             control_type=FabPortControlType(request.control_type),
@@ -67,7 +77,7 @@ def get_port_config(
     """Get configuration for a fabric port."""
     dev = get_device(device_id)
     try:
-        mgr = FabricManager(dev)
+        mgr = dev.fabric
         return mgr.get_port_config(port_id)
     except Exception as e:
         raise_on_error(e, "get_port_config")
@@ -82,7 +92,7 @@ def set_port_config(
     """Set configuration for a fabric port."""
     dev = get_device(device_id)
     try:
-        mgr = FabricManager(dev)
+        mgr = dev.fabric
         config = FabPortConfig(
             phys_port_id=port_id,
             port_type=request.port_type,
@@ -103,9 +113,10 @@ def gfms_bind(
     request: GfmsBindRequest = ...,
 ) -> dict[str, str]:
     """Bind a host port to an endpoint port via GFMS."""
+    fabric_control_limiter.check(device_id)
     dev = get_device(device_id)
     try:
-        mgr = FabricManager(dev)
+        mgr = dev.fabric
         mgr.bind(request)
         return {"status": "bound"}
     except Exception as e:
@@ -118,9 +129,10 @@ def gfms_unbind(
     request: GfmsUnbindRequest = ...,
 ) -> dict[str, str]:
     """Unbind a host port from an endpoint port via GFMS."""
+    fabric_control_limiter.check(device_id)
     dev = get_device(device_id)
     try:
-        mgr = FabricManager(dev)
+        mgr = dev.fabric
         mgr.unbind(request)
         return {"status": "unbound"}
     except Exception as e:
@@ -134,7 +146,7 @@ def clear_gfms_events(
     """Clear all GFMS events."""
     dev = get_device(device_id)
     try:
-        mgr = FabricManager(dev)
+        mgr = dev.fabric
         mgr.clear_gfms_events()
         return {"status": "cleared"}
     except Exception as e:

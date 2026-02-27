@@ -35,6 +35,21 @@ _STATUS_MAP: dict[type[SwitchtecError], int] = {
     MrpcError: 502,
 }
 
+# Map exception classes to sanitized user-facing messages.
+# Internal details (MRPC codes, device paths) are logged server-side
+# but never exposed in HTTP responses.
+_USER_MESSAGES: dict[type[SwitchtecError], str] = {
+    DeviceNotFoundError: "Device not found",
+    InvalidPortError: "Invalid port specified",
+    InvalidLaneError: "Invalid lane specified",
+    InvalidParameterError: "Invalid parameter",
+    SwitchtecPermissionError: "Permission denied",
+    SwitchtecTimeoutError: "Operation timed out",
+    UnsupportedError: "Operation not supported by this device",
+    DeviceOpenError: "Failed to open device",
+    MrpcError: "Hardware communication error",
+}
+
 
 def raise_on_error(e: Exception, operation: str = "") -> NoReturn:
     """Convert a SwitchtecError to an appropriate HTTPException.
@@ -50,7 +65,8 @@ def raise_on_error(e: Exception, operation: str = "") -> NoReturn:
             error_code=e.error_code,
             status=status,
         )
-        raise HTTPException(status_code=status, detail=str(e))
+        user_msg = _USER_MESSAGES.get(type(e), "Operation failed")
+        raise HTTPException(status_code=status, detail=user_msg)
 
     logger.exception("unexpected_error", operation=operation)
     raise HTTPException(status_code=500, detail="Internal server error")

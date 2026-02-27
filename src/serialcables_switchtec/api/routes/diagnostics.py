@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Path, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Path, Query
+from pydantic import BaseModel, Field, field_validator
 
 from serialcables_switchtec.api.dependencies import DEVICE_ID_PATTERN, get_device
 from serialcables_switchtec.api.error_handlers import raise_on_error
+from serialcables_switchtec.api.rate_limit import injection_limiter
 from serialcables_switchtec.bindings.constants import (
     DiagEnd,
     DiagLink,
@@ -44,6 +45,14 @@ class EyeStartRequest(BaseModel):
     y_end: int = Field(default=255, ge=0, le=512)
     y_step: int = Field(default=2, ge=1, le=16)
     step_interval: int = Field(default=10, ge=1, le=1000)
+
+    @field_validator("lane_mask")
+    @classmethod
+    def validate_lane_mask_values(cls, v: list[int]) -> list[int]:
+        for i, val in enumerate(v):
+            if not (0 <= val <= 0xFFFFFFFF):
+                raise ValueError(f"lane_mask[{i}] must be 0-0xFFFFFFFF")
+        return v
 
 
 @router.post("/{device_id}/diag/eye/start")
@@ -257,6 +266,7 @@ def inject_dllp(
     request: DllpInjectRequest = ...,
 ) -> dict[str, str]:
     """Inject a DLLP."""
+    injection_limiter.check(device_id)
     dev = get_device(device_id)
     try:
         injector = ErrorInjector(dev)
@@ -273,6 +283,7 @@ def inject_dllp_crc(
     request: DllpCrcInjectRequest = ...,
 ) -> dict[str, str]:
     """Enable/disable DLLP CRC error injection."""
+    injection_limiter.check(device_id)
     dev = get_device(device_id)
     try:
         injector = ErrorInjector(dev)
@@ -289,6 +300,7 @@ def inject_tlp_lcrc(
     request: TlpLcrcInjectRequest = ...,
 ) -> dict[str, str]:
     """Enable/disable TLP LCRC error injection."""
+    injection_limiter.check(device_id)
     dev = get_device(device_id)
     try:
         injector = ErrorInjector(dev)
@@ -304,6 +316,7 @@ def inject_seq_num(
     port_id: int = Path(ge=0, le=59),
 ) -> dict[str, str]:
     """Inject a TLP sequence number error."""
+    injection_limiter.check(device_id)
     dev = get_device(device_id)
     try:
         injector = ErrorInjector(dev)
@@ -320,6 +333,7 @@ def inject_ack_nack(
     request: AckNackInjectRequest = ...,
 ) -> dict[str, str]:
     """Inject ACK/NACK errors."""
+    injection_limiter.check(device_id)
     dev = get_device(device_id)
     try:
         injector = ErrorInjector(dev)
@@ -335,6 +349,7 @@ def inject_cto(
     port_id: int = Path(ge=0, le=59),
 ) -> dict[str, str]:
     """Inject completion timeout."""
+    injection_limiter.check(device_id)
     dev = get_device(device_id)
     try:
         injector = ErrorInjector(dev)
@@ -435,6 +450,11 @@ def crosshair_get(
 ) -> list[CrossHairResult]:
     """Get cross-hair measurement results."""
     dev = get_device(device_id)
+    if start_lane + num_lanes > 144:
+        raise HTTPException(
+            status_code=422,
+            detail="start_lane + num_lanes must not exceed 144",
+        )
     try:
         diag = dev.diagnostics
         return diag.cross_hair_get(start_lane, num_lanes)

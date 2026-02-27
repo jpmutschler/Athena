@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 
 from serialcables_switchtec.api.dependencies import DEVICE_ID_PATTERN, get_device
 from serialcables_switchtec.api.error_handlers import raise_on_error
-from serialcables_switchtec.core.osa import OrderedSetAnalyzer
 
 router = APIRouter()
 
@@ -45,7 +44,7 @@ def osa_start(
     """Start OSA capture on a stack."""
     dev = get_device(device_id)
     try:
-        osa = OrderedSetAnalyzer(dev)
+        osa = dev.osa
         osa.start(stack_id)
         return {"status": "started"}
     except Exception as e:
@@ -60,7 +59,7 @@ def osa_stop(
     """Stop OSA capture on a stack."""
     dev = get_device(device_id)
     try:
-        osa = OrderedSetAnalyzer(dev)
+        osa = dev.osa
         osa.stop(stack_id)
         return {"status": "stopped"}
     except Exception as e:
@@ -76,7 +75,7 @@ def osa_config_type(
     """Configure OSA ordered set type filter."""
     dev = get_device(device_id)
     try:
-        osa = OrderedSetAnalyzer(dev)
+        osa = dev.osa
         osa.configure_type(
             stack_id, request.direction, request.lane_mask,
             request.link_rate, request.os_types,
@@ -95,7 +94,7 @@ def osa_config_pattern(
     """Configure OSA pattern match filter."""
     dev = get_device(device_id)
     try:
-        osa = OrderedSetAnalyzer(dev)
+        osa = dev.osa
         osa.configure_pattern(
             stack_id, request.direction, request.lane_mask,
             request.link_rate, request.value_data, request.mask_data,
@@ -114,7 +113,7 @@ def osa_capture_control(
     """Configure and start OSA capture control."""
     dev = get_device(device_id)
     try:
-        osa = OrderedSetAnalyzer(dev)
+        osa = dev.osa
         osa.capture_control(
             stack_id, request.lane_mask, request.direction,
             request.drop_single_os, request.stop_mode,
@@ -136,7 +135,7 @@ def osa_capture_data(
     """Read captured OSA data for a lane."""
     dev = get_device(device_id)
     try:
-        osa = OrderedSetAnalyzer(dev)
+        osa = dev.osa
         result = osa.capture_data(stack_id, lane_id, direction)
         return {"status": 0, "result": result}
     except Exception as e:
@@ -151,7 +150,7 @@ def osa_dump_config(
     """Dump current OSA configuration."""
     dev = get_device(device_id)
     try:
-        osa = OrderedSetAnalyzer(dev)
+        osa = dev.osa
         result = osa.dump_config(stack_id)
         return {"status": 0, "result": result}
     except Exception as e:

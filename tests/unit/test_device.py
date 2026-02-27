@@ -280,9 +280,9 @@ class TestEnsureLibrary:
         """First call should load and configure prototypes."""
         import serialcables_switchtec.core.device as device_mod
 
-        # Reset the flag so _ensure_library triggers setup_prototypes
-        original_flag = device_mod._prototypes_configured
-        device_mod._prototypes_configured = False
+        # Reset the cached lib so _ensure_library triggers full init
+        original_lib = device_mod._cached_lib
+        device_mod._cached_lib = None
         try:
             with patch(
                 "serialcables_switchtec.core.device.load_library",
@@ -295,29 +295,29 @@ class TestEnsureLibrary:
             mock_load.assert_called_once()
             mock_setup.assert_called_once_with(mock_library)
             assert result is mock_library
-            assert device_mod._prototypes_configured is True
+            assert device_mod._cached_lib is mock_library
         finally:
-            device_mod._prototypes_configured = original_flag
+            device_mod._cached_lib = original_lib
 
     def test_ensure_library_skips_prototypes_on_second_call(self, mock_library):
-        """Second call should skip setup_prototypes."""
+        """Second call should return cached lib without reloading."""
         import serialcables_switchtec.core.device as device_mod
 
-        original_flag = device_mod._prototypes_configured
-        device_mod._prototypes_configured = True
+        original_lib = device_mod._cached_lib
+        device_mod._cached_lib = mock_library
         try:
             with patch(
                 "serialcables_switchtec.core.device.load_library",
-                return_value=mock_library,
-            ), patch(
+            ) as mock_load, patch(
                 "serialcables_switchtec.core.device.setup_prototypes"
             ) as mock_setup:
                 result = _ensure_library()
 
+            mock_load.assert_not_called()
             mock_setup.assert_not_called()
             assert result is mock_library
         finally:
-            device_mod._prototypes_configured = original_flag
+            device_mod._cached_lib = original_lib
 
 
 class TestSwitchtecDeviceOpen:
