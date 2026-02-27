@@ -20,3 +20,29 @@ class FwImageInfo(BaseModel):
     active: bool
     running: bool
     read_only: bool
+
+
+class FwPartitionInfo(BaseModel):
+    """Firmware partition active/inactive image info."""
+
+    model_config = ConfigDict(frozen=True)
+
+    active: FwImageInfo | None = None
+    inactive: FwImageInfo | None = None
+
+
+class FwPartSummary(BaseModel):
+    """Summary of all firmware partition images."""
+
+    model_config = ConfigDict(frozen=True)
+
+    boot: FwPartitionInfo = FwPartitionInfo()
+    map: FwPartitionInfo = FwPartitionInfo()
+    img: FwPartitionInfo = FwPartitionInfo()
+    cfg: FwPartitionInfo = FwPartitionInfo()
+    nvlog: FwPartitionInfo = FwPartitionInfo()
+    seeprom: FwPartitionInfo = FwPartitionInfo()
+    key: FwPartitionInfo = FwPartitionInfo()
+    bl2: FwPartitionInfo = FwPartitionInfo()
+    riot: FwPartitionInfo = FwPartitionInfo()
+    is_boot_ro: bool = False

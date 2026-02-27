@@ -62,6 +62,15 @@ class FakeLibrary:
         self.switchtec_event_ctl = MagicMock(return_value=0)
         self.switchtec_event_wait = MagicMock(return_value=0)
 
+        # Firmware functions
+        self.switchtec_fw_toggle_active_partition = MagicMock(return_value=0)
+        self.switchtec_fw_read = MagicMock(return_value=0)
+        self.switchtec_fw_part_summary = MagicMock(return_value=None)
+        self.switchtec_fw_part_summary_free = MagicMock()
+        self.switchtec_fw_is_boot_ro = MagicMock(return_value=0)
+        self.switchtec_fw_set_boot_ro = MagicMock(return_value=0)
+        self.switchtec_fw_image_type = MagicMock(return_value=b"IMG")
+
         # BW/Lat functions
         self.switchtec_bwcntr_many = MagicMock(return_value=0)
         self.switchtec_bwcntr_all = MagicMock(return_value=0)
@@ -99,6 +108,16 @@ class FakeLibrary:
         self.switchtec_inject_err_tlp_seq_num = MagicMock(return_value=0)
         self.switchtec_inject_err_ack_nack = MagicMock(return_value=0)
         self.switchtec_inject_err_cto = MagicMock(return_value=0)
+
+        # Fabric functions
+        self.switchtec_topo_info_dump = MagicMock(return_value=0)
+        self.switchtec_fab_port_config_get = MagicMock(return_value=0)
+        self.switchtec_fab_port_config_set = MagicMock(return_value=0)
+        self.switchtec_port_control = MagicMock(return_value=0)
+        self.switchtec_gfms_bind = MagicMock(return_value=0)
+        self.switchtec_gfms_unbind = MagicMock(return_value=0)
+        self.switchtec_get_gfms_events = MagicMock(return_value=0)
+        self.switchtec_clear_gfms_events = MagicMock(return_value=0)
 
         # OSA functions
         self.switchtec_osa = MagicMock(return_value=0)

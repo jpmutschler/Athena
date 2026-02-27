@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import NoReturn
+
 from fastapi import HTTPException
 
 from serialcables_switchtec.exceptions import (
@@ -34,7 +36,7 @@ _STATUS_MAP: dict[type[SwitchtecError], int] = {
 }
 
 
-def raise_on_error(e: Exception, operation: str = "") -> None:
+def raise_on_error(e: Exception, operation: str = "") -> NoReturn:
     """Convert a SwitchtecError to an appropriate HTTPException.
 
     Logs full details server-side, returns sanitized message to client.

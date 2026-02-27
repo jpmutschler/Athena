@@ -256,3 +256,43 @@ class SwitchtecDiagLtssmLog(Structure):
         ("tx_minor_state", c_int),
         ("rx_minor_state", c_int),
     ]
+
+
+# ─── Fabric Structures ────────────────────────────────────────────
+
+class SwitchtecFabPortConfig(Structure):
+    """Fabric port configuration structure."""
+
+    _pack_ = 1
+    _fields_ = [
+        ("port_type", c_uint8),
+        ("clock_source", c_uint8),
+        ("clock_sris", c_uint8),
+        ("hvd_inst", c_uint8),
+        ("link_width", c_uint8),
+    ]
+
+
+class SwitchtecGfmsBindReq(Structure):
+    """GFMS bind request structure."""
+
+    _pack_ = 1
+    _fields_ = [
+        ("host_sw_idx", c_uint8),
+        ("host_phys_port_id", c_uint8),
+        ("host_log_port_id", c_uint8),
+        ("ep_sw_idx", c_uint8),
+        ("ep_phys_port_id", c_uint8),
+    ]
+
+
+class SwitchtecGfmsUnbindReq(Structure):
+    """GFMS unbind request structure."""
+
+    _pack_ = 1
+    _fields_ = [
+        ("host_sw_idx", c_uint8),
+        ("host_phys_port_id", c_uint8),
+        ("host_log_port_id", c_uint8),
+        ("opt", c_uint8),
+    ]

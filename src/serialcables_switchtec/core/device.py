@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import POINTER, c_float, c_int
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from serialcables_switchtec.bindings.constants import (
     SwitchtecBootPhase,
@@ -27,6 +27,11 @@ from serialcables_switchtec.models.device import (
     PortStatus,
 )
 from serialcables_switchtec.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from serialcables_switchtec.core.events import EventManager
+    from serialcables_switchtec.core.fabric import FabricManager
+    from serialcables_switchtec.core.firmware import FirmwareManager
 
 logger = get_logger(__name__)
 
@@ -84,6 +89,9 @@ class SwitchtecDevice:
         self._handle = handle
         self._lib = lib
         self._closed = False
+        self._events_mgr: EventManager | None = None
+        self._fabric_mgr: FabricManager | None = None
+        self._firmware_mgr: FirmwareManager | None = None
 
     @classmethod
     def open(cls, device: str) -> SwitchtecDevice:
@@ -154,6 +162,33 @@ class SwitchtecDevice:
     def lib(self) -> ctypes.CDLL:
         """Library handle for sub-managers."""
         return self._lib
+
+    @property
+    def events(self) -> EventManager:
+        """Access event management operations."""
+        if self._events_mgr is None:
+            from serialcables_switchtec.core.events import EventManager
+
+            self._events_mgr = EventManager(self)
+        return self._events_mgr
+
+    @property
+    def firmware(self) -> FirmwareManager:
+        """Access firmware management operations."""
+        if self._firmware_mgr is None:
+            from serialcables_switchtec.core.firmware import FirmwareManager
+
+            self._firmware_mgr = FirmwareManager(self)
+        return self._firmware_mgr
+
+    @property
+    def fabric(self) -> FabricManager:
+        """Access fabric/topology operations (PAX devices only)."""
+        if self._fabric_mgr is None:
+            from serialcables_switchtec.core.fabric import FabricManager
+
+            self._fabric_mgr = FabricManager(self)
+        return self._fabric_mgr
 
     @property
     def name(self) -> str:

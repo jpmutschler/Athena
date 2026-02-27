@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import os
 import re
 
@@ -30,13 +31,16 @@ _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 async def verify_api_key(
     api_key: str | None = Security(_api_key_header),
 ) -> None:
-    """Verify API key if SWITCHTEC_API_KEY is configured."""
+    """Verify API key. Rejects all requests if SWITCHTEC_API_KEY is not configured."""
     expected = os.environ.get("SWITCHTEC_API_KEY")
     if expected is None:
-        return  # Auth not configured, allow all
-    if api_key is None or api_key != expected:
         raise HTTPException(
-            status_code=403, detail="Invalid or missing API key"
+            status_code=503,
+            detail="API key not configured. Set SWITCHTEC_API_KEY environment variable.",
+        )
+    if api_key is None or not hmac.compare_digest(api_key, expected):
+        raise HTTPException(
+            status_code=403, detail="Invalid or missing API key",
         )
 
 
