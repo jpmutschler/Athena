@@ -306,6 +306,10 @@ athena device temp /dev/switchtec0
 
 # Show port status table
 athena device status /dev/switchtec0
+
+# Hard-reset the switch (requires confirmation)
+athena device hard-reset /dev/switchtec0
+athena device hard-reset /dev/switchtec0 --yes  # Skip confirmation
 ```
 
 Port status output:
@@ -489,6 +493,51 @@ athena perf latency-setup /dev/switchtec0 --egress 0 --ingress 4
 athena perf latency /dev/switchtec0 --egress 0
 ```
 
+### Ordered Set Analyzer (OSA) Commands
+
+```bash
+# Start/stop OSA capture on a stack
+athena osa start /dev/switchtec0 --stack 0
+athena osa stop /dev/switchtec0 --stack 0
+
+# Configure type filter
+athena osa config-type /dev/switchtec0 --stack 0 --direction 0 \
+    --lane-mask 0xff --link-rate 4 --os-types 0x1
+
+# Configure pattern match filter
+athena osa config-pattern /dev/switchtec0 --stack 0 --direction 0 \
+    --lane-mask 0xff --link-rate 4 \
+    --value 0x1,0x2,0x3,0x4 --mask 0xff,0xff,0xff,0xff
+
+# Configure and start capture control
+athena osa capture /dev/switchtec0 --stack 0 --lane-mask 0xff --direction 0
+
+# Read captured data
+athena osa read /dev/switchtec0 --stack 0 --lane 0 --direction 0
+
+# Dump current OSA configuration
+athena osa dump-config /dev/switchtec0 --stack 0
+```
+
+### Event Counter Commands
+
+Event counters are critical for BER (Bit Error Rate) testing and continuous error monitoring.
+
+```bash
+# Configure event counter 0 on stack 0 to count all errors on port 0
+athena evcntr setup /dev/switchtec0 --stack 0 --counter 0 \
+    --port-mask 0x1 --type-mask 0x7ffff
+
+# Read counter values
+athena evcntr read /dev/switchtec0 --stack 0 --counter 0 --count 4
+
+# Read with setup info and clear after reading
+athena evcntr read /dev/switchtec0 --stack 0 --counter 0 --show-setup --clear
+
+# Show counter setup configuration
+athena evcntr get-setup /dev/switchtec0 --stack 0 --counter 0 --count 4
+```
+
 ### Server Command
 
 ```bash
@@ -531,6 +580,7 @@ curl -H "X-API-Key: your-secret-key" http://127.0.0.1:8000/api/devices/
 | `DELETE` | `/api/devices/{id}` | Close a device session |
 | `GET` | `/api/devices/{id}` | Get device summary info |
 | `GET` | `/api/devices/{id}/temperature` | Read die temperature |
+| `POST` | `/api/devices/{id}/hard-reset` | Hard-reset device (requires `confirm: true` body) |
 | `GET` | `/api/devices/{id}/ports` | List port status |
 | `GET` | `/api/devices/{id}/ports/{port}/pff` | Get PFF index for a port |
 
@@ -549,6 +599,9 @@ curl -H "X-API-Key: your-secret-key" http://127.0.0.1:8000/api/devices/
 | `GET` | `/api/devices/{id}/diag/patmon/{port}/{lane}` | Get pattern monitor results |
 | `POST` | `/api/devices/{id}/diag/inject/dllp/{port}` | Inject DLLP |
 | `POST` | `/api/devices/{id}/diag/inject/dllp-crc/{port}` | DLLP CRC error injection |
+| `POST` | `/api/devices/{id}/diag/inject/tlp-lcrc/{port}` | TLP LCRC error injection |
+| `POST` | `/api/devices/{id}/diag/inject/seq-num/{port}` | Sequence number error injection |
+| `POST` | `/api/devices/{id}/diag/inject/ack-nack/{port}` | ACK/NACK error injection |
 | `POST` | `/api/devices/{id}/diag/inject/cto/{port}` | Inject completion timeout |
 | `GET` | `/api/devices/{id}/diag/rcvr/{port}/{lane}` | Dump receiver object |
 | `GET` | `/api/devices/{id}/diag/eq/{port}` | Get port EQ TX coefficients |
@@ -593,6 +646,27 @@ curl -H "X-API-Key: your-secret-key" http://127.0.0.1:8000/api/devices/
 | `POST` | `/api/devices/{id}/perf/bw` | Get bandwidth counters |
 | `POST` | `/api/devices/{id}/perf/latency/setup` | Configure latency measurement |
 | `GET` | `/api/devices/{id}/perf/latency/{port}` | Get latency measurement |
+
+**Ordered Set Analyzer (OSA):**
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/devices/{id}/osa/{stack}/start` | Start OSA capture |
+| `POST` | `/api/devices/{id}/osa/{stack}/stop` | Stop OSA capture |
+| `POST` | `/api/devices/{id}/osa/{stack}/config-type` | Configure type filter |
+| `POST` | `/api/devices/{id}/osa/{stack}/config-pattern` | Configure pattern filter |
+| `POST` | `/api/devices/{id}/osa/{stack}/capture` | Configure capture control |
+| `GET` | `/api/devices/{id}/osa/{stack}/data/{lane}` | Read captured data |
+| `GET` | `/api/devices/{id}/osa/{stack}/dump-config` | Dump OSA configuration |
+
+**Event Counters:**
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/devices/{id}/evcntr/{stack}/{counter}/setup` | Configure event counter |
+| `GET` | `/api/devices/{id}/evcntr/{stack}/{counter}/setup` | Get counter setup |
+| `GET` | `/api/devices/{id}/evcntr/{stack}/{counter}/counts` | Read counter values |
+| `GET` | `/api/devices/{id}/evcntr/{stack}/{counter}` | Get setup + values |
 
 All endpoints return JSON. Error responses follow a consistent structure:
 
@@ -813,6 +887,49 @@ with SwitchtecDevice.open("/dev/switchtec0") as dev:
     print(f"Latency: current={lat.current_ns} ns  max={lat.max_ns} ns")
 ```
 
+### Ordered Set Analyzer
+
+```python
+from serialcables_switchtec.core.device import SwitchtecDevice
+
+with SwitchtecDevice.open("/dev/switchtec0") as dev:
+    osa = dev.osa  # Lazy-initialized OrderedSetAnalyzer
+
+    # Configure and start capture
+    osa.configure_type(stack_id=0, direction=0, lane_mask=0xFF, link_rate=4, os_types=0x1)
+    osa.start(stack_id=0)
+
+    # Read captured data
+    result = osa.capture_data(stack_id=0, lane=0, direction=0)
+
+    # Stop capture
+    osa.stop(stack_id=0)
+```
+
+### Event Counters
+
+```python
+from serialcables_switchtec.core.device import SwitchtecDevice
+from serialcables_switchtec.bindings.constants import EvCntrTypeMask
+
+with SwitchtecDevice.open("/dev/switchtec0") as dev:
+    evcntr = dev.evcntr  # Lazy-initialized EventCounterManager
+
+    # Configure counter 0 on stack 0 to count all errors on port 0
+    evcntr.setup(stack_id=0, counter_id=0, port_mask=0x1,
+                 type_mask=EvCntrTypeMask.ALL_ERRORS)
+
+    # Read counter values
+    counts = evcntr.get_counts(stack_id=0, counter_id=0, nr_counters=4)
+    for i, c in enumerate(counts):
+        print(f"Counter {i}: {c}")
+
+    # Read setup and values together
+    values = evcntr.get_both(stack_id=0, counter_id=0, nr_counters=4)
+    for v in values:
+        print(f"Counter {v.counter_id}: {v.count} ({v.setup})")
+```
+
 ### Error Handling
 
 All library errors raise from a single `SwitchtecError` base class. Specific subclasses map to errno values and MRPC return codes from the C library.
@@ -882,6 +999,7 @@ src/serialcables_switchtec/
 |   |-- device.py               # SwitchtecDevice: open/close/list/status/temp + lazy managers
 |   |-- diagnostics.py          # DiagnosticsManager: eye, LTSSM, loopback, pattern, EQ
 |   |-- error_injection.py      # ErrorInjector: DLLP, TLP LCRC, seq num, ACK/NACK, CTO
+|   |-- evcntr.py               # EventCounterManager: setup, read, wait
 |   |-- firmware.py             # FirmwareManager: version, read, write, toggle, boot-ro
 |   |-- events.py               # EventManager: summary, clear, wait
 |   |-- fabric.py               # FabricManager: port control/config, bind/unbind, events
@@ -891,6 +1009,7 @@ src/serialcables_switchtec/
 |-- models/                     # Pydantic models (frozen, immutable)
 |   |-- device.py               # DeviceInfo, PortId, PortStatus, DeviceSummary
 |   |-- diagnostics.py          # EyeData, LtssmLogEntry, CrossHairResult, ReceiverObject
+|   |-- evcntr.py               # EvCntrSetupResult, EvCntrValue, EvCntrSetupRequest
 |   |-- performance.py          # BwCounterResult, LatencyResult, EventCounterResult
 |   |-- firmware.py             # FwImageInfo, FwPartSummary
 |   |-- events.py               # EventSummaryResult
@@ -898,11 +1017,13 @@ src/serialcables_switchtec/
 |
 |-- cli/                        # Click command-line interface
 |   |-- main.py                 # Root group (--debug, --json-output, --version), serve
-|   |-- device.py               # list, info, temp, status
+|   |-- device.py               # list, info, temp, status, hard-reset
 |   |-- diag.py                 # eye, eye-fetch, eye-cancel, ltssm, loopback, patgen, patmon, inject, rcvr, eq, crosshair
+|   |-- evcntr.py               # setup, read, get-setup
 |   |-- firmware.py             # version, summary, read, write, toggle, boot-ro
 |   |-- events.py               # summary, clear, wait
 |   |-- fabric.py               # port-control, port-config, bind, unbind, clear-events
+|   |-- osa.py                  # start, stop, config-type, config-pattern, capture, read, dump-config
 |   +-- perf.py                 # bw, latency-setup, latency
 |
 |-- api/                        # FastAPI REST + WebSocket API
@@ -911,12 +1032,14 @@ src/serialcables_switchtec/
 |   |-- dependencies.py         # Shared helpers: get_device(), DEVICE_ID_PATTERN
 |   |-- error_handlers.py       # Exception-to-HTTP status mapping
 |   +-- routes/                 # Route modules
-|       |-- devices.py          # Device management endpoints
+|       |-- devices.py          # Device management + hard-reset endpoints
 |       |-- ports.py            # Port status endpoints
 |       |-- diagnostics.py      # Eye, LTSSM, loopback, pattern, injection, EQ, crosshair
+|       |-- evcntr.py           # Event counter setup, read, get-both
 |       |-- firmware.py         # Firmware version, write, toggle, boot-ro, summary
 |       |-- events.py           # Event summary, clear, wait
 |       |-- fabric.py           # Fabric port control/config, bind/unbind, events
+|       |-- osa.py              # OSA start, stop, config, capture, data
 |       +-- performance.py      # Bandwidth and latency endpoints
 |
 |-- ui/                         # NiceGUI browser dashboard
@@ -982,7 +1105,7 @@ pytest tests/ -v
 pytest tests/ -v --cov=serialcables_switchtec --cov-report=term-missing
 ```
 
-**Current status:** 770 tests (unit, integration, and end-to-end). Coverage is at 84%. The UI layer requires a NiceGUI runtime and is not covered by automated tests.
+**Current status:** 836 tests (unit, integration, and end-to-end). Coverage is at 84%. The UI layer requires a NiceGUI runtime and is not covered by automated tests.
 
 ---
 
