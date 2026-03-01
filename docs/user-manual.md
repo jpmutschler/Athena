@@ -124,7 +124,9 @@ The header bar spans the top of every page and contains:
 
 ### Left Sidebar Navigation
 
-The sidebar contains 15 navigation items, each with a Material Design icon. The active page is highlighted with:
+The sidebar organizes 17 pages into **6 collapsible categories** that follow the VE validation workflow. Each category has a header with an icon that expands/collapses to show its pages. The category containing the active page auto-expands on load.
+
+The active page is highlighted with:
 
 - An **accent green left border** (3px solid).
 - Bold text weight.
@@ -133,23 +135,52 @@ The sidebar contains 15 navigation items, each with a Material Design icon. The 
 
 Inactive items appear in secondary text color with a transparent left border.
 
+#### Device
+
 | Label | Route | Icon | Description |
 |---|---|---|---|
 | Discovery | `/` | search | Device scan and connection |
 | Dashboard | `/dashboard` | dashboard | Switch overview and summary |
-| Ports | `/ports` | device_hub | Port status table |
 | Firmware | `/firmware` | system_update | Firmware partition management |
+
+#### Link Health
+
+| Label | Route | Icon | Description |
+|---|---|---|---|
+| Ports | `/ports` | device_hub | Port status table |
+| LTSSM Trace | `/ltssm` | timeline | LTSSM state machine trace |
 | Events | `/events` | notifications | Device event monitoring |
 | Event Counters | `/evcntr` | bar_chart | Hardware event counter setup and read |
+
+#### Signal Integrity
+
+| Label | Route | Icon | Description |
+|---|---|---|---|
 | Eye Diagram | `/eye` | visibility | Eye diagram capture and analysis |
-| LTSSM Trace | `/ltssm` | timeline | LTSSM state machine trace |
-| Performance | `/performance` | speed | Bandwidth and latency monitoring |
-| Workflows | `/workflows` | play_circle | Pre-composed validation recipes |
-| Fabric | `/fabric` | hub | Fabric topology and CSR access |
 | BER Testing | `/ber` | science | Loopback, pattern gen/mon, live BER |
-| Equalization | `/equalization` | tune | TX EQ coefficients and margin |
-| Injection | `/injection` | warning | PCIe error injection |
+| Equalization | `/equalization` | tune | TX EQ coefficients and receiver calibration |
+| Margin Testing | `/margin` | straighten | Cross-hair lane margin analysis with diamond plots |
 | OSA | `/osa` | analytics | Ordered Set Analyzer |
+
+#### Performance & Debug
+
+| Label | Route | Icon | Description |
+|---|---|---|---|
+| Performance | `/performance` | speed | Bandwidth and latency monitoring |
+| Error Injection | `/injection` | warning | PCIe error injection |
+
+#### Fabric
+
+| Label | Route | Icon | Description |
+|---|---|---|---|
+| Fabric | `/fabric` | hub | Fabric topology and CSR access |
+| Fabric View | `/fabric-view` | account_tree | Multi-device topology dashboard |
+
+#### Automation
+
+| Label | Route | Icon | Description |
+|---|---|---|---|
+| Workflows | `/workflows` | play_circle | Pre-composed validation recipes |
 
 ![Screenshot: Left sidebar navigation with Ports page active](screenshots/ui-sidebar.png)
 
