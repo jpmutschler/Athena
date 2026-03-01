@@ -115,7 +115,7 @@ def _build_baseline(dev: SwitchtecDevice) -> dict[int, dict[str, object]]:
 
 def _check_ports(
     dev: SwitchtecDevice, st: _StabilityState, elog: _EventLog,
-    elapsed: float, interval: int,
+    elapsed: float, actual_delta: float,
 ) -> None:
     """Compare current port status against baseline; emit change events."""
     try:
@@ -130,11 +130,14 @@ def _check_ports(
             continue
         prev = st.baseline[pid]
 
-        # Uptime/downtime tracking
+        # Uptime/downtime tracking (uses actual wall-clock delta, not
+        # configured interval, to avoid drift over long runs)
         if s.link_up:
-            st.port_uptime[pid] += interval
             if pid in st.port_down_start:
+                # Just recovered — count downtime, don't credit uptime
                 st.port_downtime[pid] += elapsed - st.port_down_start.pop(pid)
+            else:
+                st.port_uptime[pid] += actual_delta
         elif pid not in st.port_down_start and prev["link_up"]:
             st.port_down_start[pid] = elapsed
 
@@ -317,6 +320,7 @@ def main() -> None:
 
         # Polling loop
         duration_s = args.duration * 3600
+        prev_elapsed = 0.0
 
         while True:
             elapsed = time.monotonic() - start_time
@@ -324,9 +328,11 @@ def main() -> None:
                 break
             time.sleep(args.interval)
             elapsed = time.monotonic() - start_time
+            actual_delta = elapsed - prev_elapsed
+            prev_elapsed = elapsed
             st.elapsed_s = elapsed
 
-            _check_ports(dev, st, elog, elapsed, args.interval)
+            _check_ports(dev, st, elog, elapsed, actual_delta)
             _check_ltssm(dev, st, elog, elapsed)
             temperatures = _check_temps(
                 dev, st, elog, elapsed, args.temp_warn, args.temp_crit,

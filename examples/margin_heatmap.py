@@ -45,13 +45,21 @@ def parse_args() -> argparse.Namespace:
         "--h-warn",
         type=int,
         default=20,
-        help="Horizontal margin warning threshold (default: 20)",
+        help=(
+            "Horizontal margin warning threshold in ASIC cross-hair units "
+            "(default: 20; consult Switchtec cross-hair documentation for "
+            "mUI conversion)"
+        ),
     )
     parser.add_argument(
         "--v-warn",
         type=int,
         default=30,
-        help="Vertical margin warning threshold (default: 30)",
+        help=(
+            "Vertical margin warning threshold in ASIC cross-hair units "
+            "(default: 30; consult Switchtec cross-hair documentation for "
+            "mV conversion)"
+        ),
     )
     parser.add_argument(
         "--timeout-per-lane",

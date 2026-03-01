@@ -109,6 +109,11 @@ def parse_args() -> argparse.Namespace:
         default=4,
         help="Number of lanes to monitor (default: 4)",
     )
+    parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Skip confirmation prompt (for automated/CI use)",
+    )
     return parser.parse_args()
 
 
@@ -131,10 +136,19 @@ def _parse_gens(gens_arg: str) -> list[str]:
     return result
 
 
-def _format_ber(ber: float) -> str:
-    """Format BER as a readable string."""
+def _format_ber(ber: float, total_bits: float = 0.0) -> str:
+    """Format BER as a readable string.
+
+    When zero errors are observed, the 90% confidence upper bound is
+    2.3 / total_bits (Poisson one-sided). The bound depends on actual
+    test duration and link rate, so we compute it rather than claiming
+    a fixed floor like 1e-15.
+    """
     if ber == 0.0:
-        return "< 1e-15"
+        if total_bits > 0:
+            upper_bound = 2.3 / total_bits
+            return f"< {upper_bound:.1e}"
+        return "0 (unknown confidence)"
     return f"{ber:.2e}"
 
 
@@ -256,11 +270,16 @@ def _measure_gen(
 
         # Step 9: Compute BER
         # BER = total_errors / (rate_gts * 1e9 * duration * lanes)
+        # NOTE: For Gen6 PAM4, LINK_RATE_GTS uses 64 GT/s (the data rate).
+        # If the pattern monitor counts symbol errors rather than bit errors,
+        # the denominator should use 32 GBaud (symbol rate) instead.
+        # This approximation uses the data rate for all generations.
         total_bits = gts * 1e9 * duration * lane_count
         approx_ber = total_errors / total_bits if total_bits > 0 else 0.0
 
         result["total_errors"] = total_errors
         result["approx_ber"] = approx_ber
+        result["total_bits"] = total_bits
         result["verdict"] = _ber_verdict(approx_ber)
 
         # Per-lane detail
@@ -269,7 +288,7 @@ def _measure_gen(
         )
         _log(
             f"  [{gen_upper}] PRBS31: {total_errors} errors, "
-            f"BER {_format_ber(approx_ber)} [{lane_detail}]"
+            f"BER {_format_ber(approx_ber, total_bits)} [{lane_detail}]"
         )
 
     except SwitchtecError as exc:
@@ -332,7 +351,7 @@ def _print_comparison(results: list[dict], port_id: int) -> None:
         gts = r["gts"]
         rate_str = f"{gts:>4.0f} GT/s"
         errors_str = str(r["total_errors"])
-        ber_str = _format_ber(r["approx_ber"])
+        ber_str = _format_ber(r["approx_ber"], r.get("total_bits", 0.0))
 
         print(
             f"{r['gen']:>6} | {rate_str:>8} | {errors_str:>8} | "
@@ -350,7 +369,7 @@ def _print_comparison(results: list[dict], port_id: int) -> None:
         else:
             print(
                 f"Overall: Worst BER at {worst['gen']} = "
-                f"{_format_ber(worst['approx_ber'])}"
+                f"{_format_ber(worst['approx_ber'], worst.get('total_bits', 0.0))}"
             )
     else:
         print("Overall: All generations skipped.")
@@ -377,6 +396,19 @@ def main() -> None:
             f"Port {args.port}, Generations: {', '.join(g.upper() for g in gens)}, "
             f"Duration: {args.duration}s/gen, Lanes: {args.lanes}"
         )
+
+        # Confirmation prompt — loopback takes port offline
+        if not args.yes and sys.stdin.isatty():
+            response = input(
+                f"\nWARNING: This will enable loopback mode on port {args.port}.\n"
+                f"The port will be taken offline and any live traffic will be dropped.\n"
+                f"Generations to test: {', '.join(g.upper() for g in gens)}\n"
+                f"Continue? [y/N]: "
+            )
+            if response.lower() != "y":
+                _log("Aborted.")
+                dev.close()
+                sys.exit(0)
 
         results: list[dict] = []
         for gen_idx, gen in enumerate(gens):

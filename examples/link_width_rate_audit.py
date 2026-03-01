@@ -267,7 +267,6 @@ def main() -> None:
         _log(f"  {len(ports)} ports discovered.")
     except KeyboardInterrupt:
         _log("\nInterrupted by user.")
-        dev.close()
         sys.exit(130)
     finally:
         dev.close()

@@ -58,6 +58,11 @@ def parse_args() -> argparse.Namespace:
         default=5.0,
         help="Seconds to wait for link recovery after injection (default: 5.0)",
     )
+    parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Skip confirmation prompt (for automated/CI use)",
+    )
     return parser.parse_args()
 
 
@@ -358,6 +363,20 @@ def main() -> None:
             f"{args.recovery_window}s recovery window"
         )
 
+        # Confirmation prompt — destructive operation
+        if not args.yes and sys.stdin.isatty():
+            inj_names = ", ".join(name for _, name in INJECTION_TYPES)
+            port_list = ", ".join(str(p) for p in port_ids)
+            response = input(
+                f"\nWARNING: This will inject errors ({inj_names})\n"
+                f"on ports: {port_list}\n"
+                f"This may cause link retraining, AER errors, or OS-visible faults.\n"
+                f"Continue? [y/N]: "
+            )
+            if response.lower() != "y":
+                _log("Aborted.")
+                return
+
         all_rows: list[dict] = []
         total_tests = len(port_ids) * len(INJECTION_TYPES)
         test_num = 0
@@ -407,7 +426,9 @@ def main() -> None:
 
     except KeyboardInterrupt:
         _log("\nInterrupted by user.")
-        # Ensure rate-based injections are disabled
+        sys.exit(130)
+    finally:
+        # Ensure rate-based injections are disabled on all known ports
         for pid in port_ids:
             try:
                 dev.injector.inject_dllp_crc(pid, False, 0)
@@ -417,8 +438,6 @@ def main() -> None:
                 dev.injector.inject_tlp_lcrc(pid, False, 0)
             except SwitchtecError:
                 pass
-        sys.exit(130)
-    finally:
         dev.close()
 
 

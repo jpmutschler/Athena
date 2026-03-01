@@ -59,6 +59,11 @@ def parse_args() -> argparse.Namespace:
         default=10.0,
         help="Seconds to wait for link up after enable (default: 10.0)",
     )
+    parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Skip confirmation prompt (for automated/CI use)",
+    )
     return parser.parse_args()
 
 
@@ -166,6 +171,20 @@ def main() -> None:
             f"Recovery timeout: {args.recovery_timeout}s",
             file=sys.stderr,
         )
+
+        # Confirmation prompt — destructive operation
+        if not args.yes and sys.stdin.isatty():
+            response = input(
+                f"\nWARNING: This will disable/enable port {args.port} "
+                f"{args.cycles} times.\n"
+                f"Any active traffic on this port WILL be disrupted.\n"
+                f"Downstream endpoints may experience surprise removal.\n"
+                f"Continue? [y/N]: "
+            )
+            if response.lower() != "y":
+                print("Aborted.", file=sys.stderr)
+                dev.close()
+                sys.exit(0)
 
         # Open CSV
         timestamp_str = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -292,7 +311,16 @@ def main() -> None:
         )
 
     except KeyboardInterrupt:
-        print("\nInterrupted by user.", file=sys.stderr)
+        print("\nInterrupted by user. Re-enabling port...", file=sys.stderr)
+        try:
+            dev.fabric.port_control(
+                args.port, FabPortControlType.ENABLE
+            )
+        except SwitchtecError as exc:
+            print(
+                f"WARNING: Could not re-enable port: {exc}",
+                file=sys.stderr,
+            )
         _print_summary(
             args, verdicts, recovery_times, completed_cycles,
             baseline_rate, baseline_width,

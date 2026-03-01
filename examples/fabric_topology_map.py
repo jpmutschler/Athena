@@ -210,7 +210,6 @@ def main() -> None:
         ports = _collect_ports(dev)
     except KeyboardInterrupt:
         _log("\nInterrupted by user.")
-        dev.close()
         sys.exit(130)
     finally:
         dev.close()

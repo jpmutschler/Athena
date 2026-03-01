@@ -344,9 +344,10 @@ def _print_summary(
         r_eg = corr_egress[pid].r()
         r_ig = corr_ingress[pid].r()
 
-        # Flag if BW dropped >10% while temp rose >10C
+        # Flag if BW dropped >10% while temp rose >10C AND the
+        # correlation is negative (BW decreasing as temp increases)
         flag = ""
-        if max_eg > 0 and temp_range > 10.0:
+        if max_eg > 0 and temp_range > 10.0 and r_eg < -0.3:
             bw_drop_pct = ((max_eg - min_eg) / max_eg) * 100.0
             if bw_drop_pct > 10.0:
                 flag = "THROT"
@@ -362,7 +363,7 @@ def _print_summary(
     print()
     print("Correlation key: r > 0 means BW increases with temp,")
     print("                 r < 0 means BW decreases with temp (throttling).")
-    print("THROT flag: BW dropped >10% while temperature rose >10C.")
+    print("THROT flag: BW dropped >10% while temp rose >10C and r < -0.3.")
     print("=" * 64)
 
 
