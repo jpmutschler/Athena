@@ -51,8 +51,8 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 | Eye Diagrams | BER eye capture with configurable step size, lane selection, fetch, and cancel |
 | LTSSM Analysis | State machine log capture, decode, and clear (Gen3/4/5/6 tables) |
 | Loopback Testing | RX-to-TX, TX-to-RX, LTSSM, and PIPE loopback modes |
-| Pattern Gen/Mon | PRBS7/9/11/15/23/31 pattern generation and bit-error monitoring |
-| Error Injection | DLLP, DLLP CRC, TLP LCRC, sequence number, ACK/NACK, completion timeout |
+| Pattern Gen/Mon | Generation-aware PRBS pattern generation and monitoring (Gen3/4: PRBS7-31, Gen5: +PRBS5/20, Gen6: +PRBS13/52-UI jitter) |
+| Error Injection | DLLP, DLLP CRC, TLP LCRC, sequence number, ACK/NACK, completion timeout, AER event generation |
 | Receiver Characterization | CTLE, target amplitude, speculative DFE, dynamic DFE readout |
 | Port Equalization | TX coefficient dump (local/far-end, current/previous link) |
 | Cross-Hair Analysis | Per-lane eye limit measurement with enable/disable/get control |
@@ -62,7 +62,7 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 
 **Events** -- Query event summary counts, clear all events, and wait for events with configurable timeouts.
 
-**Fabric Topology** (PAX devices) -- Port enable/disable/hot-reset, port configuration, GFMS bind/unbind, and event clearing.
+**Fabric Topology** (PAX devices) -- Port enable/disable/hot-reset, port configuration, GFMS bind/unbind, event clearing, and endpoint config space read/write (CSR access via MRPC).
 
 **Performance Monitoring** -- Bandwidth counters per port (egress/ingress posted, completion, non-posted), latency measurement between port pairs, and continuous monitoring with `LinkHealthMonitor` for delta-based sampling at configurable intervals.
 
@@ -70,7 +70,7 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 
 **Public Testing Module** -- `serialcables_switchtec.testing` exports `FakeLibrary`, `create_mock_device()`, and `patch_library()` so validation engineers can write pytest suites without hardware and without copying internal test fixtures.
 
-**Security** -- API key authentication via `SWITCHTEC_API_KEY` environment variable with constant-time comparison (`hmac.compare_digest`), localhost-only binding by default, restricted CORS origins, Pydantic input validation on all API endpoints, firmware upload size limits (64 MB), port/lane ID range validation, rate limiting on destructive endpoints (hard reset, error injection, fabric control, raw MRPC), sanitized error messages that never leak internal details, and thread-safe device access with per-device operation locks.
+**Security** -- API key authentication via `SWITCHTEC_API_KEY` environment variable with constant-time comparison (`hmac.compare_digest`), localhost-only binding by default, restricted CORS origins, Pydantic input validation on all API endpoints, firmware upload size limits (64 MB), port/lane ID range validation, rate limiting on destructive endpoints (hard reset, error injection, fabric control, raw MRPC, CSR writes), width-based value validation for config space writes, sanitized error messages that never leak internal details, and thread-safe device access with per-device operation locks.
 
 ---
 
@@ -369,6 +369,13 @@ athena diag loopback /dev/switchtec0 0 --disable
 # Set PRBS31 pattern generator at Gen4 on port 0
 athena diag patgen /dev/switchtec0 0 --pattern prbs31 --speed gen4
 
+# Gen5 pattern (PRBS5, PRBS20)
+athena diag patgen /dev/switchtec0 0 --pattern prbs5 --speed gen5 --gen gen5
+
+# Gen6 pattern (PRBS13, 52-UI jitter)
+athena diag patgen /dev/switchtec0 0 --pattern prbs13 --speed gen6 --gen gen6
+athena diag patgen /dev/switchtec0 0 --pattern 52ui-jitter --speed gen6 --gen gen6
+
 # Read pattern monitor results for port 0, lane 0
 athena diag patmon /dev/switchtec0 0 0
 ```
@@ -398,6 +405,13 @@ athena diag crosshair /dev/switchtec0 --action get
 
 # Disable cross-hair
 athena diag crosshair /dev/switchtec0 --action disable
+```
+
+**AER event generation:**
+
+```bash
+# Generate an AER error event on port 0
+athena diag aer-gen /dev/switchtec0 0 --error-id 1 --trigger 0
 ```
 
 ### Error Injection Commands
@@ -474,17 +488,24 @@ athena fabric port-control /dev/switchtec0 --port 4 --action hot-reset --hot-res
 # Get fabric port configuration
 athena fabric port-config /dev/switchtec0 --port 4
 
-# Bind a host port to an endpoint port
+# Bind a host port to an endpoint
 athena fabric bind /dev/switchtec0 \
     --host-sw-idx 0 --host-phys-port 0 --host-log-port 0 \
-    --ep-sw-idx 0 --ep-phys-port 4
+    --ep-number 1 --ep-pdfid 0x100
 
 # Unbind
 athena fabric unbind /dev/switchtec0 \
-    --host-sw-idx 0 --host-phys-port 0 --host-log-port 0
+    --host-sw-idx 0 --host-phys-port 0 --host-log-port 0 \
+    --pdfid 0x100
 
 # Clear GFMS events
 athena fabric clear-events /dev/switchtec0
+
+# Read a PCIe config space register (endpoint CSR access)
+athena fabric csr-read /dev/switchtec0 --pdfid 0x100 --addr 0x10 --width 32
+
+# Write a config space register
+athena fabric csr-write /dev/switchtec0 --pdfid 0x100 --addr 0x04 --value 0x06 --width 16
 ```
 
 ### Performance Commands
@@ -634,6 +655,7 @@ curl -H "X-API-Key: your-secret-key" http://127.0.0.1:8000/api/devices/
 | `POST` | `/api/devices/{id}/diag/crosshair/enable/{lane}` | Enable cross-hair |
 | `POST` | `/api/devices/{id}/diag/crosshair/disable` | Disable cross-hair |
 | `GET` | `/api/devices/{id}/diag/crosshair` | Get cross-hair results |
+| `POST` | `/api/devices/{id}/diag/aer-gen/{port}` | Generate AER error event (rate limited) |
 
 **Firmware:**
 
@@ -664,6 +686,8 @@ curl -H "X-API-Key: your-secret-key" http://127.0.0.1:8000/api/devices/
 | `POST` | `/api/devices/{id}/fabric/bind` | GFMS bind |
 | `POST` | `/api/devices/{id}/fabric/unbind` | GFMS unbind |
 | `POST` | `/api/devices/{id}/fabric/clear-events` | Clear GFMS events |
+| `GET` | `/api/devices/{id}/fabric/csr/{pdfid}` | Read endpoint config space register |
+| `POST` | `/api/devices/{id}/fabric/csr/{pdfid}` | Write endpoint config space register (rate limited) |
 
 **Performance:**
 
@@ -893,10 +917,15 @@ with SwitchtecDevice.open("/dev/switchtec0") as dev:
         host_sw_idx=0,
         host_phys_port_id=0,
         host_log_port_id=0,
-        ep_sw_idx=0,
-        ep_phys_port_id=4,
+        ep_number=1,
+        ep_pdfid=[0x100],
     )
     fab.bind(req)
+
+    # Read/write endpoint PCIe config space registers
+    value = fab.csr_read(pdfid=0x100, addr=0x10, width=32)
+    print(f"BAR0: 0x{value:08x}")
+    fab.csr_write(pdfid=0x100, addr=0x04, value=0x06, width=16)
 ```
 
 ### Performance Monitoring
@@ -1103,11 +1132,11 @@ src/serialcables_switchtec/
 |-- cli/                        # Click command-line interface
 |   |-- main.py                 # Root group (--debug, --json-output, --version), serve
 |   |-- device.py               # list, info, temp, status, hard-reset
-|   |-- diag.py                 # eye, eye-fetch, eye-cancel, ltssm, loopback, patgen, patmon, inject, rcvr, eq, crosshair
+|   |-- diag.py                 # eye, ltssm, loopback, patgen (--gen), patmon, inject, rcvr, eq, crosshair, aer-gen
 |   |-- evcntr.py               # setup, read (--watch), get-setup
 |   |-- firmware.py             # version, summary, read, write, toggle, boot-ro
 |   |-- events.py               # summary, clear, wait
-|   |-- fabric.py               # port-control, port-config, bind, unbind, clear-events
+|   |-- fabric.py               # port-control, port-config, bind, unbind, clear-events, csr-read, csr-write
 |   |-- mrpc.py                 # Raw MRPC command interface
 |   |-- osa.py                  # start, stop, config-type, config-pattern, capture, read, dump-config
 |   +-- perf.py                 # bw (--watch), latency-setup, latency
@@ -1125,7 +1154,7 @@ src/serialcables_switchtec/
 |       |-- evcntr.py           # Event counter setup, read, get-both
 |       |-- firmware.py         # Firmware version, write, toggle, boot-ro, summary
 |       |-- events.py           # Event summary, clear, wait
-|       |-- fabric.py           # Fabric port control/config, bind/unbind, events
+|       |-- fabric.py           # Fabric port control/config, bind/unbind, events, CSR read/write
 |       |-- mrpc.py             # Raw MRPC command endpoint (rate limited)
 |       |-- osa.py              # OSA start, stop, config, capture, data
 |       +-- performance.py      # Bandwidth and latency endpoints
@@ -1230,6 +1259,7 @@ This project is under active development. The current version is **0.1.0**.
 | Phase 8 | P0 Feature Gaps -- eye fetch, firmware write, performance CLI/API | Complete |
 | Phase 9 | Code Quality -- shared dependencies, input validation, dead code removal | Complete |
 | Phase 10 | Usability -- public testing module, dev.injector/monitor, thread safety, MRPC, continuous monitoring | Complete |
+| Phase 11 | Validation -- struct layout fixes, Gen5/6 patterns, config space access, AER injection, security hardening | Complete |
 
 ---
 

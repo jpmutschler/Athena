@@ -125,6 +125,9 @@ class FakeLibrary:
         self.switchtec_diag_ltssm_log = MagicMock(return_value=0)
         self.switchtec_diag_ltssm_clear = MagicMock(return_value=0)
 
+        # AER event generation
+        self.switchtec_aer_event_gen = MagicMock(return_value=0)
+
         # Inject functions
         self.switchtec_inject_err_dllp = MagicMock(return_value=0)
         self.switchtec_inject_err_dllp_crc = MagicMock(return_value=0)
@@ -142,6 +145,14 @@ class FakeLibrary:
         self.switchtec_gfms_unbind = MagicMock(return_value=0)
         self.switchtec_get_gfms_events = MagicMock(return_value=0)
         self.switchtec_clear_gfms_events = MagicMock(return_value=0)
+
+        # Endpoint config space read/write
+        self.switchtec_ep_csr_read8 = MagicMock(return_value=0)
+        self.switchtec_ep_csr_read16 = MagicMock(return_value=0)
+        self.switchtec_ep_csr_read32 = MagicMock(return_value=0)
+        self.switchtec_ep_csr_write8 = MagicMock(return_value=0)
+        self.switchtec_ep_csr_write16 = MagicMock(return_value=0)
+        self.switchtec_ep_csr_write32 = MagicMock(return_value=0)
 
         # Event counter functions
         self.switchtec_evcntr_setup = MagicMock(return_value=0)
@@ -200,6 +211,7 @@ def patch_library(monkeypatch: object) -> FakeLibrary:
 def reset_rate_limiters() -> None:
     """Reset all API rate limiters to prevent cross-test leakage."""
     from serialcables_switchtec.api.rate_limit import (
+        csr_write_limiter,
         fabric_control_limiter,
         hard_reset_limiter,
         injection_limiter,
@@ -210,3 +222,4 @@ def reset_rate_limiters() -> None:
     injection_limiter.reset()
     fabric_control_limiter.reset()
     mrpc_limiter.reset()
+    csr_write_limiter.reset()

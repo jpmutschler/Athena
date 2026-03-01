@@ -52,3 +52,4 @@ hard_reset_limiter = RateLimiter(calls=1, period=60.0)        # 1 per minute
 injection_limiter = RateLimiter(calls=10, period=60.0)        # 10 per minute
 fabric_control_limiter = RateLimiter(calls=5, period=60.0)    # 5 per minute
 mrpc_limiter = RateLimiter(calls=10, period=60.0)             # 10 per minute
+csr_write_limiter = RateLimiter(calls=5, period=60.0)         # 5 per minute

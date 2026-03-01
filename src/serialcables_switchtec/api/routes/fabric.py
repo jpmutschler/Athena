@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Path
-from pydantic import BaseModel, Field, field_validator
+from fastapi import APIRouter, Path, Query
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from serialcables_switchtec.api.dependencies import DEVICE_ID_PATTERN, get_device
 from serialcables_switchtec.api.error_handlers import raise_on_error
-from serialcables_switchtec.api.rate_limit import fabric_control_limiter
+from serialcables_switchtec.api.rate_limit import csr_write_limiter, fabric_control_limiter
 from serialcables_switchtec.bindings.constants import (
     FabHotResetFlag,
     FabPortControlType,
@@ -31,19 +31,9 @@ class PortControlRequest(BaseModel):
 
 class SetPortConfigRequest(BaseModel):
     port_type: int = Field(default=0, ge=0, le=255)
-    link_width: int = Field(default=0, ge=0, le=32)
     clock_source: int = Field(default=0, ge=0, le=255)
     clock_sris: int = Field(default=0, ge=0, le=255)
     hvd_inst: int = Field(default=0, ge=0, le=255)
-
-    @field_validator("link_width")
-    @classmethod
-    def validate_link_width(cls, v: int) -> int:
-        if v not in (0, 1, 2, 4, 8, 16, 32):
-            raise ValueError(
-                "link_width must be 0 (no change), 1, 2, 4, 8, 16, or 32"
-            )
-        return v
 
 
 @router.post("/{device_id}/fabric/port-control")
@@ -96,7 +86,6 @@ def set_port_config(
         config = FabPortConfig(
             phys_port_id=port_id,
             port_type=request.port_type,
-            link_width=request.link_width,
             clock_source=request.clock_source,
             clock_sris=request.clock_sris,
             hvd_inst=request.hvd_inst,
@@ -151,3 +140,71 @@ def clear_gfms_events(
         return {"status": "cleared"}
     except Exception as e:
         raise_on_error(e, "clear_gfms_events")
+
+
+# --- Config Space Read/Write ------------------------------------------------
+
+
+class CsrWriteRequest(BaseModel):
+    addr: int = Field(ge=0, le=0xFFF)
+    value: int = Field(ge=0)
+    width: int = Field(default=32)
+
+    @field_validator("width")
+    @classmethod
+    def validate_width(cls, v: int) -> int:
+        if v not in (8, 16, 32):
+            raise ValueError("width must be 8, 16, or 32")
+        return v
+
+    @model_validator(mode="after")
+    def validate_value_fits_width(self) -> "CsrWriteRequest":
+        max_val = (1 << self.width) - 1
+        if self.value > max_val:
+            raise ValueError(
+                f"value 0x{self.value:x} exceeds {self.width}-bit maximum 0x{max_val:x}"
+            )
+        return self
+
+
+@router.get("/{device_id}/fabric/csr/{pdfid}")
+def csr_read(
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
+    pdfid: int = Path(ge=0, le=0xFFFF),
+    addr: int = Query(ge=0, le=0xFFF),
+    width: int = Query(default=32),
+) -> dict[str, object]:
+    """Read an endpoint PCIe config space register."""
+    if width not in (8, 16, 32):
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=422, detail="width must be 8, 16, or 32")
+    dev = get_device(device_id)
+    try:
+        mgr = dev.fabric
+        value = mgr.csr_read(pdfid, addr, width)
+        return {
+            "pdfid": pdfid,
+            "addr": addr,
+            "width": width,
+            "value": value,
+        }
+    except Exception as e:
+        raise_on_error(e, "csr_read")
+
+
+@router.post("/{device_id}/fabric/csr/{pdfid}")
+def csr_write(
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
+    pdfid: int = Path(ge=0, le=0xFFFF),
+    request: CsrWriteRequest = ...,
+) -> dict[str, str]:
+    """Write an endpoint PCIe config space register."""
+    csr_write_limiter.check(device_id)
+    dev = get_device(device_id)
+    try:
+        mgr = dev.fabric
+        mgr.csr_write(pdfid, request.addr, request.value, request.width)
+        return {"status": "written"}
+    except Exception as e:
+        raise_on_error(e, "csr_write")

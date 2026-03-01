@@ -15,7 +15,6 @@ class FabPortConfig(BaseModel):
     clock_source: int = Field(default=0, ge=0, le=255)
     clock_sris: int = Field(default=0, ge=0, le=255)
     hvd_inst: int = Field(default=0, ge=0, le=255)
-    link_width: int = Field(default=0, ge=0, le=255)
 
 
 class FabTopoPort(BaseModel):
@@ -48,8 +47,8 @@ class GfmsBindRequest(BaseModel):
     host_sw_idx: int = Field(ge=0, le=255)
     host_phys_port_id: int = Field(ge=0, le=255)
     host_log_port_id: int = Field(ge=0, le=255)
-    ep_sw_idx: int = Field(ge=0, le=255)
-    ep_phys_port_id: int = Field(ge=0, le=255)
+    ep_number: int = Field(default=0, ge=0)
+    ep_pdfid: list[int] = Field(default_factory=list, max_length=8)
 
 
 class GfmsUnbindRequest(BaseModel):
@@ -60,4 +59,5 @@ class GfmsUnbindRequest(BaseModel):
     host_sw_idx: int = Field(ge=0, le=255)
     host_phys_port_id: int = Field(ge=0, le=255)
     host_log_port_id: int = Field(ge=0, le=255)
-    opt: int = Field(default=0, ge=0, le=255)
+    pdfid: int = Field(default=0, ge=0, le=65535)
+    option: int = Field(default=0, ge=0, le=255)

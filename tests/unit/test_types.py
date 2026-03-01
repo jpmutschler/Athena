@@ -273,24 +273,35 @@ class TestSwitchtecDiagCrossHair:
 
     def test_eye_limit_fields(self) -> None:
         ch = SwitchtecDiagCrossHair()
-        ch.eye_left_lim = -10
-        ch.eye_right_lim = 10
-        ch.eye_bot_left_lim = -5
-        ch.eye_bot_right_lim = 5
-        ch.eye_top_left_lim = -8
-        ch.eye_top_right_lim = 8
-        assert ch.eye_left_lim == -10
-        assert ch.eye_right_lim == 10
-        assert ch.eye_bot_left_lim == -5
-        assert ch.eye_bot_right_lim == 5
-        assert ch.eye_top_left_lim == -8
-        assert ch.eye_top_right_lim == 8
+        ch.u.done.eye_left_lim = -10
+        ch.u.done.eye_right_lim = 10
+        ch.u.done.eye_bot_left_lim = -5
+        ch.u.done.eye_bot_right_lim = 5
+        ch.u.done.eye_top_left_lim = -8
+        ch.u.done.eye_top_right_lim = 8
+        assert ch.u.done.eye_left_lim == -10
+        assert ch.u.done.eye_right_lim == 10
+        assert ch.u.done.eye_bot_left_lim == -5
+        assert ch.u.done.eye_bot_right_lim == 5
+        assert ch.u.done.eye_top_left_lim == -8
+        assert ch.u.done.eye_top_right_lim == 8
+
+    def test_error_fields_overlap(self) -> None:
+        ch = SwitchtecDiagCrossHair()
+        ch.u.error.prev_state = 5
+        ch.u.error.x_pos = -3
+        ch.u.error.y_pos = 7
+        assert ch.u.error.prev_state == 5
+        assert ch.u.error.x_pos == -3
+        assert ch.u.error.y_pos == 7
+        # Verify union overlap: error.prev_state shares memory with done.eye_left_lim
+        assert ch.u.done.eye_left_lim == 5
 
     def test_default_zero(self) -> None:
         ch = SwitchtecDiagCrossHair()
         assert ch.state == 0
         assert ch.lane_id == 0
-        assert ch.eye_left_lim == 0
+        assert ch.u.done.eye_left_lim == 0
 
 
 class TestSwitchtecFwImageInfo:

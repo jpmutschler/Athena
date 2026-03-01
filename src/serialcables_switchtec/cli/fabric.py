@@ -95,8 +95,8 @@ def fabric_port_config(ctx: click.Context, device_path: str, port: int) -> None:
 @click.option("--host-sw-idx", required=True, type=int, help="Host switch index.")
 @click.option("--host-phys-port", required=True, type=click.IntRange(0, 59), help="Host physical port ID.")
 @click.option("--host-log-port", required=True, type=int, help="Host logical port ID.")
-@click.option("--ep-sw-idx", required=True, type=int, help="Endpoint switch index.")
-@click.option("--ep-phys-port", required=True, type=click.IntRange(0, 59), help="Endpoint physical port ID.")
+@click.option("--ep-number", default=0, type=int, help="Number of endpoint functions to bind.")
+@click.option("--ep-pdfid", multiple=True, type=int, help="Endpoint PD Function ID(s), up to 8.")
 @click.pass_context
 def fabric_bind(
     ctx: click.Context,
@@ -104,17 +104,17 @@ def fabric_bind(
     host_sw_idx: int,
     host_phys_port: int,
     host_log_port: int,
-    ep_sw_idx: int,
-    ep_phys_port: int,
+    ep_number: int,
+    ep_pdfid: tuple[int, ...],
 ) -> None:
-    """Bind a host port to an endpoint port via GFMS."""
+    """Bind a host port to endpoint(s) via GFMS."""
     try:
         request = GfmsBindRequest(
             host_sw_idx=host_sw_idx,
             host_phys_port_id=host_phys_port,
             host_log_port_id=host_log_port,
-            ep_sw_idx=ep_sw_idx,
-            ep_phys_port_id=ep_phys_port,
+            ep_number=ep_number,
+            ep_pdfid=list(ep_pdfid),
         )
         with SwitchtecDevice.open(device_path) as dev:
             dev.fabric.bind(request)
@@ -122,12 +122,12 @@ def fabric_bind(
                 click.echo(json.dumps({
                     "bound": True,
                     "host_phys_port": host_phys_port,
-                    "ep_phys_port": ep_phys_port,
+                    "ep_number": ep_number,
                 }))
             else:
                 click.echo(
-                    f"Bound host port {host_phys_port} to "
-                    f"endpoint port {ep_phys_port}."
+                    f"Bound host port {host_phys_port} "
+                    f"({ep_number} endpoint(s))."
                 )
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
@@ -139,7 +139,8 @@ def fabric_bind(
 @click.option("--host-sw-idx", required=True, type=int, help="Host switch index.")
 @click.option("--host-phys-port", required=True, type=click.IntRange(0, 59), help="Host physical port ID.")
 @click.option("--host-log-port", required=True, type=int, help="Host logical port ID.")
-@click.option("--opt", default=0, type=int, help="Unbind option.")
+@click.option("--pdfid", default=0, type=int, help="Endpoint PD Function ID to unbind.")
+@click.option("--option", "unbind_option", default=0, type=int, help="Unbind option.")
 @click.pass_context
 def fabric_unbind(
     ctx: click.Context,
@@ -147,7 +148,8 @@ def fabric_unbind(
     host_sw_idx: int,
     host_phys_port: int,
     host_log_port: int,
-    opt: int,
+    pdfid: int,
+    unbind_option: int,
 ) -> None:
     """Unbind a host port from an endpoint port via GFMS."""
     try:
@@ -155,7 +157,8 @@ def fabric_unbind(
             host_sw_idx=host_sw_idx,
             host_phys_port_id=host_phys_port,
             host_log_port_id=host_log_port,
-            opt=opt,
+            pdfid=pdfid,
+            option=unbind_option,
         )
         with SwitchtecDevice.open(device_path) as dev:
             dev.fabric.unbind(request)
@@ -183,6 +186,112 @@ def fabric_clear_events(ctx: click.Context, device_path: str) -> None:
                 click.echo(json.dumps({"cleared": True}))
             else:
                 click.echo("GFMS events cleared.")
+    except SwitchtecError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+
+@fabric_group.command("csr-read")
+@click.argument("device_path")
+@click.option("--pdfid", required=True, type=click.IntRange(0, 0xFFFF), help="Endpoint PD Function ID.")
+@click.option("--addr", required=True, type=str, help="Config space offset (hex, e.g. 0x10).")
+@click.option(
+    "--width",
+    type=click.Choice(["8", "16", "32"]),
+    default="32",
+    help="Register width in bits.",
+)
+@click.pass_context
+def fabric_csr_read(
+    ctx: click.Context,
+    device_path: str,
+    pdfid: int,
+    addr: str,
+    width: str,
+) -> None:
+    """Read an endpoint PCIe config space register."""
+    try:
+        try:
+            addr_int = int(addr, 0)
+        except ValueError:
+            raise click.BadParameter(f"invalid address: {addr!r}", param_hint="'--addr'")
+        if addr_int < 0 or addr_int > 0xFFF:
+            click.echo(f"Error: addr must be 0x000-0xFFF, got 0x{addr_int:x}", err=True)
+            raise click.Abort()
+        width_int = int(width)
+        with SwitchtecDevice.open(device_path) as dev:
+            value = dev.fabric.csr_read(pdfid, addr_int, width_int)
+            if ctx.obj.get("json_output"):
+                click.echo(json.dumps({
+                    "pdfid": pdfid,
+                    "addr": f"0x{addr_int:x}",
+                    "width": width_int,
+                    "value": f"0x{value:x}",
+                }))
+            else:
+                click.echo(
+                    f"CSR[0x{addr_int:x}] (w{width_int}) = 0x{value:x}"
+                )
+    except SwitchtecError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+
+@fabric_group.command("csr-write")
+@click.argument("device_path")
+@click.option("--pdfid", required=True, type=click.IntRange(0, 0xFFFF), help="Endpoint PD Function ID.")
+@click.option("--addr", required=True, type=str, help="Config space offset (hex, e.g. 0x10).")
+@click.option("--value", required=True, type=str, help="Value to write (hex, e.g. 0xFF).")
+@click.option(
+    "--width",
+    type=click.Choice(["8", "16", "32"]),
+    default="32",
+    help="Register width in bits.",
+)
+@click.pass_context
+def fabric_csr_write(
+    ctx: click.Context,
+    device_path: str,
+    pdfid: int,
+    addr: str,
+    value: str,
+    width: str,
+) -> None:
+    """Write an endpoint PCIe config space register."""
+    try:
+        try:
+            addr_int = int(addr, 0)
+        except ValueError:
+            raise click.BadParameter(f"invalid address: {addr!r}", param_hint="'--addr'")
+        if addr_int < 0 or addr_int > 0xFFF:
+            click.echo(f"Error: addr must be 0x000-0xFFF, got 0x{addr_int:x}", err=True)
+            raise click.Abort()
+        try:
+            value_int = int(value, 0)
+        except ValueError:
+            raise click.BadParameter(f"invalid value: {value!r}", param_hint="'--value'")
+        width_int = int(width)
+        max_val = (1 << width_int) - 1
+        if value_int < 0 or value_int > max_val:
+            click.echo(
+                f"Error: value 0x{value_int:x} exceeds {width_int}-bit max 0x{max_val:x}",
+                err=True,
+            )
+            raise click.Abort()
+        with SwitchtecDevice.open(device_path) as dev:
+            dev.fabric.csr_write(pdfid, addr_int, value_int, width_int)
+            if ctx.obj.get("json_output"):
+                click.echo(json.dumps({
+                    "pdfid": pdfid,
+                    "addr": f"0x{addr_int:x}",
+                    "width": width_int,
+                    "value": f"0x{value_int:x}",
+                    "written": True,
+                }))
+            else:
+                click.echo(
+                    f"CSR[0x{addr_int:x}] (w{width_int}) <- 0x{value_int:x}"
+                )
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
         raise click.Abort()

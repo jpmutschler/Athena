@@ -6,7 +6,15 @@ Field names preserve the original C naming convention for direct mapping.
 from __future__ import annotations
 
 import ctypes
-from ctypes import Structure, c_char, c_int, c_uint8, c_uint16, c_uint32, c_uint64, c_float
+import sys
+from ctypes import Structure, Union, c_char, c_int, c_uint8, c_uint16, c_uint32, c_uint64, c_ulong, c_float
+
+# C `unsigned long` is 4 bytes on Windows (LLP64) and 8 bytes on 64-bit Linux (LP64).
+# Match the native C compiler's sizing for struct layout compatibility.
+if sys.platform == "win32":
+    _c_ulong = ctypes.c_uint32
+else:
+    _c_ulong = ctypes.c_ulong
 
 from serialcables_switchtec.bindings.constants import (
     MAX_PARTS,
@@ -96,21 +104,21 @@ class SwitchtecFwImageInfo(Structure):
 
     _fields_ = [
         ("gen", c_int),
-        ("part_id", c_uint32),
+        ("part_id", _c_ulong),
         ("type", c_int),
         ("version", c_char * 32),
         ("part_addr", ctypes.c_size_t),
         ("part_len", ctypes.c_size_t),
         ("part_body_offset", ctypes.c_size_t),
         ("image_len", ctypes.c_size_t),
-        ("image_crc", c_uint32),
+        ("image_crc", _c_ulong),
         ("valid", ctypes.c_bool),
         ("active", ctypes.c_bool),
         ("running", ctypes.c_bool),
         ("read_only", ctypes.c_bool),
         ("next", ctypes.c_void_p),  # Pointer to next info
         ("metadata", ctypes.c_void_p),
-        ("secure_version", c_uint32),
+        ("secure_version", _c_ulong),
         ("signed_image", ctypes.c_bool),
         ("redundant", c_uint8),
     ]
@@ -196,19 +204,52 @@ class Range(Structure):
 
 # ─── Diagnostic Structures ──────────────────────────────────────────
 
+class _CrossHairErrorFields(Structure):
+    """Anonymous struct for error state (prev_state, x_pos, y_pos)."""
+
+    _fields_ = [
+        ("prev_state", c_int),
+        ("x_pos", c_int),
+        ("y_pos", c_int),
+    ]
+
+
+class _CrossHairDoneFields(Structure):
+    """Anonymous struct for done state (eye limits)."""
+
+    _fields_ = [
+        ("eye_left_lim", c_int),
+        ("eye_right_lim", c_int),
+        ("eye_bot_left_lim", c_int),
+        ("eye_bot_right_lim", c_int),
+        ("eye_top_left_lim", c_int),
+        ("eye_top_right_lim", c_int),
+    ]
+
+
+class _CrossHairUnion(Union):
+    """Union overlay matching the anonymous union in switchtec_diag_cross_hair."""
+
+    _fields_ = [
+        ("error", _CrossHairErrorFields),
+        ("done", _CrossHairDoneFields),
+    ]
+
+
 class SwitchtecDiagCrossHair(Structure):
-    """Matches struct switchtec_diag_cross_hair in switchtec.h."""
+    """Matches struct switchtec_diag_cross_hair in switchtec.h.
+
+    The C struct contains an anonymous union with two overlapping structs:
+      - error fields: prev_state, x_pos, y_pos  (valid when state == ERROR)
+      - done fields: eye_left_lim .. eye_top_right_lim  (valid when state == DONE)
+
+    Access done fields via .u.done.eye_left_lim, error fields via .u.error.prev_state.
+    """
 
     _fields_ = [
         ("state", c_int),
         ("lane_id", c_int),
-        # Union: error fields or done fields
-        ("eye_left_lim", c_int),  # Also prev_state when state==ERROR
-        ("eye_right_lim", c_int),  # Also x_pos when state==ERROR
-        ("eye_bot_left_lim", c_int),  # Also y_pos when state==ERROR
-        ("eye_bot_right_lim", c_int),
-        ("eye_top_left_lim", c_int),
-        ("eye_top_right_lim", c_int),
+        ("u", _CrossHairUnion),
     ]
 
 
@@ -305,7 +346,7 @@ class SwitchtecDiagLtssmLog(Structure):
 # ─── Fabric Structures ────────────────────────────────────────────
 
 class SwitchtecFabPortConfig(Structure):
-    """Fabric port configuration structure."""
+    """Matches struct switchtec_fab_port_config in fabric.h."""
 
     _pack_ = 1
     _fields_ = [
@@ -313,30 +354,30 @@ class SwitchtecFabPortConfig(Structure):
         ("clock_source", c_uint8),
         ("clock_sris", c_uint8),
         ("hvd_inst", c_uint8),
-        ("link_width", c_uint8),
     ]
 
 
 class SwitchtecGfmsBindReq(Structure):
-    """GFMS bind request structure."""
+    """Matches struct switchtec_gfms_bind_req in fabric.h."""
 
     _pack_ = 1
     _fields_ = [
         ("host_sw_idx", c_uint8),
         ("host_phys_port_id", c_uint8),
         ("host_log_port_id", c_uint8),
-        ("ep_sw_idx", c_uint8),
-        ("ep_phys_port_id", c_uint8),
+        ("ep_number", c_int),
+        ("ep_pdfid", c_uint16 * 8),
     ]
 
 
 class SwitchtecGfmsUnbindReq(Structure):
-    """GFMS unbind request structure."""
+    """Matches struct switchtec_gfms_unbind_req in fabric.h."""
 
     _pack_ = 1
     _fields_ = [
         ("host_sw_idx", c_uint8),
         ("host_phys_port_id", c_uint8),
         ("host_log_port_id", c_uint8),
-        ("opt", c_uint8),
+        ("pdfid", c_uint16),
+        ("option", c_uint8),
     ]

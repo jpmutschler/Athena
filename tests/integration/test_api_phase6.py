@@ -465,8 +465,8 @@ class TestFabricRoutes:
                 "host_sw_idx": 0,
                 "host_phys_port_id": 0,
                 "host_log_port_id": 0,
-                "ep_sw_idx": 0,
-                "ep_phys_port_id": 1,
+                "ep_number": 1,
+                "ep_pdfid": [1],
             },
         )
         assert response.status_code == 404
@@ -611,8 +611,8 @@ class TestFabricRoutes:
                 "host_sw_idx": 0,
                 "host_phys_port_id": 1,
                 "host_log_port_id": 2,
-                "ep_sw_idx": 1,
-                "ep_phys_port_id": 3,
+                "ep_number": 1,
+                "ep_pdfid": [0x300],
             },
         )
         assert response.status_code == 200
@@ -622,8 +622,8 @@ class TestFabricRoutes:
         assert bind_req.host_sw_idx == 0
         assert bind_req.host_phys_port_id == 1
         assert bind_req.host_log_port_id == 2
-        assert bind_req.ep_sw_idx == 1
-        assert bind_req.ep_phys_port_id == 3
+        assert bind_req.ep_number == 1
+        assert bind_req.ep_pdfid == [0x300]
 
     def test_bind_missing_required_fields(self, client, registered_device):
         """POST bind without required fields should return 422."""
@@ -641,7 +641,8 @@ class TestFabricRoutes:
                 "host_sw_idx": 0,
                 "host_phys_port_id": 1,
                 "host_log_port_id": 2,
-                "opt": 1,
+                "pdfid": 0x100,
+                "option": 1,
             },
         )
         assert response.status_code == 200
@@ -651,10 +652,11 @@ class TestFabricRoutes:
         assert unbind_req.host_sw_idx == 0
         assert unbind_req.host_phys_port_id == 1
         assert unbind_req.host_log_port_id == 2
-        assert unbind_req.opt == 1
+        assert unbind_req.pdfid == 0x100
+        assert unbind_req.option == 1
 
     def test_unbind_defaults(self, client, registered_device):
-        """POST unbind with minimal body should default opt=0."""
+        """POST unbind with minimal body should default pdfid=0 and option=0."""
         response = client.post(
             "/api/devices/testdev/fabric/unbind",
             json={
@@ -665,7 +667,8 @@ class TestFabricRoutes:
         )
         assert response.status_code == 200
         unbind_req = registered_device.fabric.unbind.call_args[0][0]
-        assert unbind_req.opt == 0
+        assert unbind_req.pdfid == 0
+        assert unbind_req.option == 0
 
     def test_clear_gfms_events_happy_path(self, client, registered_device):
         """POST clear events should invoke dev.fabric.clear_gfms_events."""
@@ -754,8 +757,8 @@ class TestFabricRoutes:
                 "host_sw_idx": 0,
                 "host_phys_port_id": 0,
                 "host_log_port_id": 0,
-                "ep_sw_idx": 0,
-                "ep_phys_port_id": 1,
+                "ep_number": 1,
+                "ep_pdfid": [1],
             },
         )
         assert response.status_code == 502

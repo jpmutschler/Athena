@@ -98,7 +98,8 @@ class TestPhase6Help:
         result = runner.invoke(cli, ["fabric", "bind", "--help"])
         assert result.exit_code == 0
         assert "--host-sw-idx" in result.output
-        assert "--ep-phys-port" in result.output
+        assert "--ep-number" in result.output
+        assert "--ep-pdfid" in result.output
 
 
 # ===========================================================================
@@ -762,24 +763,7 @@ class TestFabricCommands:
                 "--host-sw-idx", "0",
                 "--host-phys-port", "60",
                 "--host-log-port", "0",
-                "--ep-sw-idx", "0",
-                "--ep-phys-port", "0",
-            ],
-        )
-        assert result.exit_code != 0
-
-    def test_fabric_bind_rejects_ep_phys_port_60(self) -> None:
-        """Endpoint physical port 60 is out of range for bind (max is 59)."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "fabric", "bind", "/dev/switchtec0",
-                "--host-sw-idx", "0",
-                "--host-phys-port", "0",
-                "--host-log-port", "0",
-                "--ep-sw-idx", "0",
-                "--ep-phys-port", "60",
+                "--ep-number", "0",
             ],
         )
         assert result.exit_code != 0
@@ -813,15 +797,14 @@ class TestFabricCommands:
                 "--host-sw-idx", "0",
                 "--host-phys-port", "1",
                 "--host-log-port", "2",
-                "--ep-sw-idx", "0",
-                "--ep-phys-port", "3",
+                "--ep-number", "1",
+                "--ep-pdfid", "256",
             ],
         )
 
         assert result.exit_code == 0
         assert "Bound" in result.output
         assert "1" in result.output  # host port
-        assert "3" in result.output  # ep port
         mock_dev.fabric.bind.assert_called_once()
 
     @patch("serialcables_switchtec.cli.fabric.SwitchtecDevice")
@@ -837,8 +820,8 @@ class TestFabricCommands:
                 "--host-sw-idx", "0",
                 "--host-phys-port", "1",
                 "--host-log-port", "2",
-                "--ep-sw-idx", "0",
-                "--ep-phys-port", "3",
+                "--ep-number", "1",
+                "--ep-pdfid", "256",
             ],
         )
 
@@ -846,7 +829,7 @@ class TestFabricCommands:
         parsed = json.loads(result.output)
         assert parsed["bound"] is True
         assert parsed["host_phys_port"] == 1
-        assert parsed["ep_phys_port"] == 3
+        assert parsed["ep_number"] == 1
 
     @patch("serialcables_switchtec.cli.fabric.SwitchtecDevice")
     def test_fabric_bind_error(self, mock_cls: MagicMock) -> None:
@@ -862,8 +845,8 @@ class TestFabricCommands:
                 "--host-sw-idx", "0",
                 "--host-phys-port", "1",
                 "--host-log-port", "2",
-                "--ep-sw-idx", "0",
-                "--ep-phys-port", "3",
+                "--ep-number", "1",
+                "--ep-pdfid", "256",
             ],
         )
 

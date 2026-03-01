@@ -14,7 +14,7 @@ from serialcables_switchtec.bindings.types import (
     SwitchtecGfmsBindReq,
     SwitchtecGfmsUnbindReq,
 )
-from serialcables_switchtec.exceptions import check_error
+from serialcables_switchtec.exceptions import InvalidParameterError, SwitchtecError, check_error
 from serialcables_switchtec.models.fabric import (
     FabPortConfig,
     GfmsBindRequest,
@@ -85,7 +85,6 @@ class FabricManager:
             clock_source=config.clock_source,
             clock_sris=config.clock_sris,
             hvd_inst=config.hvd_inst,
-            link_width=config.link_width,
         )
 
     def set_port_config(self, config: FabPortConfig) -> None:
@@ -99,7 +98,6 @@ class FabricManager:
         c_config.clock_source = config.clock_source
         c_config.clock_sris = config.clock_sris
         c_config.hvd_inst = config.hvd_inst
-        c_config.link_width = config.link_width
         with self._dev.device_op():
             ret = self._dev.lib.switchtec_fab_port_config_set(
                 self._dev.handle,
@@ -110,7 +108,7 @@ class FabricManager:
         logger.info("port_config_set", port=config.phys_port_id)
 
     def bind(self, request: GfmsBindRequest) -> None:
-        """Bind a host port to an endpoint port via GFMS.
+        """Bind a host port to endpoint(s) via GFMS.
 
         Args:
             request: Bind request parameters.
@@ -119,8 +117,9 @@ class FabricManager:
         req.host_sw_idx = request.host_sw_idx
         req.host_phys_port_id = request.host_phys_port_id
         req.host_log_port_id = request.host_log_port_id
-        req.ep_sw_idx = request.ep_sw_idx
-        req.ep_phys_port_id = request.ep_phys_port_id
+        req.ep_number = request.ep_number
+        for i, pdfid in enumerate(request.ep_pdfid[:8]):
+            req.ep_pdfid[i] = pdfid
         with self._dev.device_op():
             ret = self._dev.lib.switchtec_gfms_bind(
                 self._dev.handle,
@@ -130,7 +129,7 @@ class FabricManager:
         logger.info(
             "gfms_bind",
             host_port=request.host_phys_port_id,
-            ep_port=request.ep_phys_port_id,
+            ep_number=request.ep_number,
         )
 
     def unbind(self, request: GfmsUnbindRequest) -> None:
@@ -143,7 +142,8 @@ class FabricManager:
         req.host_sw_idx = request.host_sw_idx
         req.host_phys_port_id = request.host_phys_port_id
         req.host_log_port_id = request.host_log_port_id
-        req.opt = request.opt
+        req.pdfid = request.pdfid
+        req.option = request.option
         with self._dev.device_op():
             ret = self._dev.lib.switchtec_gfms_unbind(
                 self._dev.handle,
@@ -163,3 +163,98 @@ class FabricManager:
             )
         check_error(ret, "clear_gfms_events")
         logger.info("gfms_events_cleared")
+
+    def csr_read(self, pdfid: int, addr: int, width: int = 32) -> int:
+        """Read an endpoint PCIe config space register.
+
+        Args:
+            pdfid: Endpoint PD Function ID.
+            addr: Config space offset address.
+            width: Register width in bits (8, 16, or 32).
+
+        Returns:
+            The register value.
+
+        Raises:
+            SwitchtecError: If the read fails or width is invalid.
+        """
+        if not (0 <= pdfid <= 0xFFFF):
+            raise InvalidParameterError(f"pdfid must be 0-0xFFFF, got {pdfid}")
+        if not (0 <= addr <= 0xFFF):
+            raise InvalidParameterError(f"addr must be 0x000-0xFFF, got 0x{addr:x}")
+        if width == 8:
+            val = ctypes.c_uint8()
+            with self._dev.device_op():
+                ret = self._dev.lib.switchtec_ep_csr_read8(
+                    self._dev.handle, pdfid, addr, ctypes.byref(val),
+                )
+        elif width == 16:
+            val = ctypes.c_uint16()
+            with self._dev.device_op():
+                ret = self._dev.lib.switchtec_ep_csr_read16(
+                    self._dev.handle, pdfid, addr, ctypes.byref(val),
+                )
+        elif width == 32:
+            val = ctypes.c_uint32()
+            with self._dev.device_op():
+                ret = self._dev.lib.switchtec_ep_csr_read32(
+                    self._dev.handle, pdfid, addr, ctypes.byref(val),
+                )
+        else:
+            raise SwitchtecError(f"Invalid CSR width: {width}. Must be 8, 16, or 32.")
+        check_error(ret, "csr_read")
+        logger.info(
+            "csr_read",
+            pdfid=pdfid,
+            addr=f"0x{addr:x}",
+            width=width,
+            value=f"0x{val.value:x}",
+        )
+        return val.value
+
+    def csr_write(
+        self, pdfid: int, addr: int, value: int, width: int = 32
+    ) -> None:
+        """Write an endpoint PCIe config space register.
+
+        Args:
+            pdfid: Endpoint PD Function ID.
+            addr: Config space offset address.
+            value: Value to write.
+            width: Register width in bits (8, 16, or 32).
+
+        Raises:
+            SwitchtecError: If the write fails or width is invalid.
+        """
+        if not (0 <= pdfid <= 0xFFFF):
+            raise InvalidParameterError(f"pdfid must be 0-0xFFFF, got {pdfid}")
+        if not (0 <= addr <= 0xFFF):
+            raise InvalidParameterError(f"addr must be 0x000-0xFFF, got 0x{addr:x}")
+        max_val = (1 << width) - 1 if width in (8, 16, 32) else 0
+        if not (0 <= value <= max_val):
+            raise InvalidParameterError(f"value 0x{value:x} exceeds {width}-bit max 0x{max_val:x}")
+        if width == 8:
+            with self._dev.device_op():
+                ret = self._dev.lib.switchtec_ep_csr_write8(
+                    self._dev.handle, pdfid, value, addr,
+                )
+        elif width == 16:
+            with self._dev.device_op():
+                ret = self._dev.lib.switchtec_ep_csr_write16(
+                    self._dev.handle, pdfid, value, addr,
+                )
+        elif width == 32:
+            with self._dev.device_op():
+                ret = self._dev.lib.switchtec_ep_csr_write32(
+                    self._dev.handle, pdfid, value, addr,
+                )
+        else:
+            raise SwitchtecError(f"Invalid CSR width: {width}. Must be 8, 16, or 32.")
+        check_error(ret, "csr_write")
+        logger.warning(
+            "csr_write",
+            pdfid=pdfid,
+            addr=f"0x{addr:x}",
+            width=width,
+            value=f"0x{value:x}",
+        )

@@ -112,7 +112,6 @@ class TestGetPortConfig:
         assert result.clock_source == 0
         assert result.clock_sris == 0
         assert result.hvd_inst == 0
-        assert result.link_width == 0
 
     def test_get_port_config_with_filled_struct(self, device, mock_library):
         def _fill_port_config(handle, port_id, config_ref):
@@ -123,7 +122,6 @@ class TestGetPortConfig:
             config.clock_source = 2
             config.clock_sris = 3
             config.hvd_inst = 4
-            config.link_width = 8
             return 0
 
         mock_library.switchtec_fab_port_config_get.side_effect = _fill_port_config
@@ -134,7 +132,6 @@ class TestGetPortConfig:
         assert result.clock_source == 2
         assert result.clock_sris == 3
         assert result.hvd_inst == 4
-        assert result.link_width == 8
 
     def test_get_port_config_raises_on_error(self, device, mock_library, monkeypatch):
         mock_library.switchtec_fab_port_config_get.return_value = -1
@@ -171,7 +168,6 @@ class TestSetPortConfig:
             captured["clock_source"] = config.clock_source
             captured["clock_sris"] = config.clock_sris
             captured["hvd_inst"] = config.hvd_inst
-            captured["link_width"] = config.link_width
             return 0
 
         mock_library.switchtec_fab_port_config_set.side_effect = _capture_set
@@ -182,14 +178,12 @@ class TestSetPortConfig:
             clock_source=2,
             clock_sris=1,
             hvd_inst=3,
-            link_width=16,
         )
         fab.set_port_config(config)
         assert captured["port_type"] == 1
         assert captured["clock_source"] == 2
         assert captured["clock_sris"] == 1
         assert captured["hvd_inst"] == 3
-        assert captured["link_width"] == 16
 
     def test_set_port_config_raises_on_error(self, device, mock_library, monkeypatch):
         mock_library.switchtec_fab_port_config_set.return_value = -1
@@ -207,8 +201,8 @@ class TestBind:
             host_sw_idx=0,
             host_phys_port_id=1,
             host_log_port_id=2,
-            ep_sw_idx=3,
-            ep_phys_port_id=4,
+            ep_number=1,
+            ep_pdfid=[0x100],
         )
         fab.bind(request)
         mock_library.switchtec_gfms_bind.assert_called_once()
@@ -225,8 +219,9 @@ class TestBind:
             captured["host_sw_idx"] = req.host_sw_idx
             captured["host_phys_port_id"] = req.host_phys_port_id
             captured["host_log_port_id"] = req.host_log_port_id
-            captured["ep_sw_idx"] = req.ep_sw_idx
-            captured["ep_phys_port_id"] = req.ep_phys_port_id
+            captured["ep_number"] = req.ep_number
+            captured["ep_pdfid_0"] = req.ep_pdfid[0]
+            captured["ep_pdfid_1"] = req.ep_pdfid[1]
             return 0
 
         mock_library.switchtec_gfms_bind.side_effect = _capture_bind
@@ -235,15 +230,16 @@ class TestBind:
             host_sw_idx=1,
             host_phys_port_id=2,
             host_log_port_id=3,
-            ep_sw_idx=4,
-            ep_phys_port_id=5,
+            ep_number=2,
+            ep_pdfid=[0x100, 0x200],
         )
         fab.bind(req)
         assert captured["host_sw_idx"] == 1
         assert captured["host_phys_port_id"] == 2
         assert captured["host_log_port_id"] == 3
-        assert captured["ep_sw_idx"] == 4
-        assert captured["ep_phys_port_id"] == 5
+        assert captured["ep_number"] == 2
+        assert captured["ep_pdfid_0"] == 0x100
+        assert captured["ep_pdfid_1"] == 0x200
 
     def test_bind_raises_on_error(self, device, mock_library, monkeypatch):
         mock_library.switchtec_gfms_bind.return_value = -1
@@ -253,8 +249,8 @@ class TestBind:
             host_sw_idx=0,
             host_phys_port_id=1,
             host_log_port_id=2,
-            ep_sw_idx=3,
-            ep_phys_port_id=4,
+            ep_number=1,
+            ep_pdfid=[0x100],
         )
         with pytest.raises(SwitchtecError):
             fab.bind(request)
@@ -267,7 +263,8 @@ class TestUnbind:
             host_sw_idx=0,
             host_phys_port_id=1,
             host_log_port_id=2,
-            opt=0,
+            pdfid=0x100,
+            option=0,
         )
         fab.unbind(request)
         mock_library.switchtec_gfms_unbind.assert_called_once()
@@ -284,7 +281,8 @@ class TestUnbind:
             captured["host_sw_idx"] = req.host_sw_idx
             captured["host_phys_port_id"] = req.host_phys_port_id
             captured["host_log_port_id"] = req.host_log_port_id
-            captured["opt"] = req.opt
+            captured["pdfid"] = req.pdfid
+            captured["option"] = req.option
             return 0
 
         mock_library.switchtec_gfms_unbind.side_effect = _capture_unbind
@@ -293,13 +291,15 @@ class TestUnbind:
             host_sw_idx=1,
             host_phys_port_id=5,
             host_log_port_id=3,
-            opt=1,
+            pdfid=0x200,
+            option=1,
         )
         fab.unbind(request)
         assert captured["host_sw_idx"] == 1
         assert captured["host_phys_port_id"] == 5
         assert captured["host_log_port_id"] == 3
-        assert captured["opt"] == 1
+        assert captured["pdfid"] == 0x200
+        assert captured["option"] == 1
 
     def test_unbind_with_option(self, device, mock_library):
         fab = FabricManager(device)
@@ -307,7 +307,8 @@ class TestUnbind:
             host_sw_idx=1,
             host_phys_port_id=5,
             host_log_port_id=3,
-            opt=1,
+            pdfid=0x100,
+            option=1,
         )
         fab.unbind(request)
         mock_library.switchtec_gfms_unbind.assert_called_once()

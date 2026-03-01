@@ -352,7 +352,7 @@ def _setup_bw_lat_functions(lib: ctypes.CDLL) -> None:
 
 
 def _setup_diag_functions(lib: ctypes.CDLL) -> None:
-    """Diagnostic functions: eye, ltssm, loopback, pattern, rcvr, eq, crosshair."""
+    """Diagnostic functions: eye, ltssm, loopback, pattern, rcvr, eq, crosshair, AER."""
 
     # ── Cross Hair ──
     lib.switchtec_diag_cross_hair_enable.argtypes = [c_void_p, c_int]
@@ -513,6 +513,12 @@ def _setup_diag_functions(lib: ctypes.CDLL) -> None:
     lib.switchtec_diag_ltssm_clear.argtypes = [c_void_p, c_int]
     lib.switchtec_diag_ltssm_clear.restype = c_int
 
+    # ── AER Event Generation ──
+    # int switchtec_aer_event_gen(struct switchtec_dev *dev,
+    #     int port_id, int error_id, int trigger)
+    lib.switchtec_aer_event_gen.argtypes = [c_void_p, c_int, c_int, c_int]
+    lib.switchtec_aer_event_gen.restype = c_int
+
 
 def _setup_inject_functions(lib: ctypes.CDLL) -> None:
     """Error injection functions."""
@@ -630,3 +636,35 @@ def _setup_fabric_functions(lib: ctypes.CDLL) -> None:
     # int switchtec_clear_gfms_events(struct switchtec_dev *dev)
     lib.switchtec_clear_gfms_events.argtypes = [c_void_p]
     lib.switchtec_clear_gfms_events.restype = c_int
+
+    # ── Endpoint Config Space Read ──
+    # int switchtec_ep_csr_read8(struct switchtec_dev *dev,
+    #     uint16_t pdfid, unsigned int addr, uint8_t *val)
+    lib.switchtec_ep_csr_read8.argtypes = [c_void_p, c_uint16, ctypes.c_uint, POINTER(c_uint8)]
+    lib.switchtec_ep_csr_read8.restype = c_int
+
+    # int switchtec_ep_csr_read16(struct switchtec_dev *dev,
+    #     uint16_t pdfid, unsigned int addr, uint16_t *val)
+    lib.switchtec_ep_csr_read16.argtypes = [c_void_p, c_uint16, ctypes.c_uint, POINTER(c_uint16)]
+    lib.switchtec_ep_csr_read16.restype = c_int
+
+    # int switchtec_ep_csr_read32(struct switchtec_dev *dev,
+    #     uint16_t pdfid, unsigned int addr, uint32_t *val)
+    lib.switchtec_ep_csr_read32.argtypes = [c_void_p, c_uint16, ctypes.c_uint, POINTER(c_uint32)]
+    lib.switchtec_ep_csr_read32.restype = c_int
+
+    # ── Endpoint Config Space Write ──
+    # int switchtec_ep_csr_write8(struct switchtec_dev *dev,
+    #     uint16_t pdfid, uint8_t val, unsigned int addr)
+    lib.switchtec_ep_csr_write8.argtypes = [c_void_p, c_uint16, c_uint8, ctypes.c_uint]
+    lib.switchtec_ep_csr_write8.restype = c_int
+
+    # int switchtec_ep_csr_write16(struct switchtec_dev *dev,
+    #     uint16_t pdfid, uint16_t val, unsigned int addr)
+    lib.switchtec_ep_csr_write16.argtypes = [c_void_p, c_uint16, c_uint16, ctypes.c_uint]
+    lib.switchtec_ep_csr_write16.restype = c_int
+
+    # int switchtec_ep_csr_write32(struct switchtec_dev *dev,
+    #     uint16_t pdfid, uint32_t val, unsigned int addr)
+    lib.switchtec_ep_csr_write32.argtypes = [c_void_p, c_uint16, c_uint32, ctypes.c_uint]
+    lib.switchtec_ep_csr_write32.restype = c_int

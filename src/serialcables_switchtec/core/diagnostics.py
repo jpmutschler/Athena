@@ -246,10 +246,17 @@ class DiagnosticsManager:
     def pattern_gen_set(
         self,
         port_id: int,
-        pattern: DiagPattern = DiagPattern.PRBS_31,
+        pattern: int = DiagPattern.PRBS_31,
         link_speed: DiagPatternLinkRate = DiagPatternLinkRate.GEN4,
     ) -> None:
-        """Set pattern generator on a port."""
+        """Set pattern generator on a port.
+
+        Args:
+            port_id: Physical port ID.
+            pattern: Pattern integer value. Use DiagPattern for Gen3/4,
+                DiagPatternGen5 for Gen5, or DiagPatternGen6 for Gen6.
+            link_speed: Link rate for the pattern generator.
+        """
         with self._dev.device_op():
             ret = self._dev.lib.switchtec_diag_pattern_gen_set(
                 self._dev.handle, port_id, int(pattern), int(link_speed)
@@ -267,9 +274,15 @@ class DiagnosticsManager:
         return pattern_type.value
 
     def pattern_mon_set(
-        self, port_id: int, pattern: DiagPattern = DiagPattern.PRBS_31
+        self, port_id: int, pattern: int = DiagPattern.PRBS_31
     ) -> None:
-        """Set pattern monitor on a port."""
+        """Set pattern monitor on a port.
+
+        Args:
+            port_id: Physical port ID.
+            pattern: Pattern integer value. Use DiagPattern for Gen3/4,
+                DiagPatternGen5 for Gen5, or DiagPatternGen6 for Gen6.
+        """
         with self._dev.device_op():
             ret = self._dev.lib.switchtec_diag_pattern_mon_set(
                 self._dev.handle, port_id, int(pattern)
@@ -465,11 +478,38 @@ class DiagnosticsManager:
                 lane_id=ch.lane_id,
                 state=ch.state,
                 state_name=state_name,
-                eye_left_lim=ch.eye_left_lim,
-                eye_right_lim=ch.eye_right_lim,
-                eye_bot_left_lim=ch.eye_bot_left_lim,
-                eye_bot_right_lim=ch.eye_bot_right_lim,
-                eye_top_left_lim=ch.eye_top_left_lim,
-                eye_top_right_lim=ch.eye_top_right_lim,
+                eye_left_lim=ch.u.done.eye_left_lim,
+                eye_right_lim=ch.u.done.eye_right_lim,
+                eye_bot_left_lim=ch.u.done.eye_bot_left_lim,
+                eye_bot_right_lim=ch.u.done.eye_bot_right_lim,
+                eye_top_left_lim=ch.u.done.eye_top_left_lim,
+                eye_top_right_lim=ch.u.done.eye_top_right_lim,
             ))
         return results
+
+    # ─── AER Event Generation ─────────────────────────────────────
+
+    def aer_event_gen(
+        self, port_id: int, error_id: int, trigger: int = 0
+    ) -> None:
+        """Generate an AER (Advanced Error Reporting) event.
+
+        Args:
+            port_id: Physical port ID.
+            error_id: AER error type identifier.
+            trigger: Event trigger flag (0 = default).
+
+        Raises:
+            SwitchtecError: If the AER event generation fails.
+        """
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_aer_event_gen(
+                self._dev.handle, port_id, error_id, trigger,
+            )
+        check_error(ret, "aer_event_gen")
+        logger.warning(
+            "aer_event_gen",
+            port_id=port_id,
+            error_id=error_id,
+            trigger=trigger,
+        )

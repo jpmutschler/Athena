@@ -9,10 +9,27 @@ import click
 from serialcables_switchtec.core.device import SwitchtecDevice
 from serialcables_switchtec.exceptions import SwitchtecError
 
-_PATTERN_MAP = {
+_PATTERN_MAP_GEN4 = {
     "prbs7": 0, "prbs11": 1, "prbs23": 2, "prbs31": 3,
     "prbs9": 4, "prbs15": 5, "disabled": 6,
 }
+_PATTERN_MAP_GEN5 = {
+    "prbs7": 0, "prbs11": 1, "prbs23": 2, "prbs31": 3,
+    "prbs9": 4, "prbs15": 5, "prbs5": 6, "prbs20": 7, "disabled": 10,
+}
+_PATTERN_MAP_GEN6 = {
+    "prbs7": 0, "prbs9": 1, "prbs11": 2, "prbs13": 3,
+    "prbs15": 4, "prbs23": 5, "prbs31": 6, "52ui-jitter": 0x19, "disabled": 0x1a,
+}
+_GEN_TO_PATTERN_MAP = {
+    "gen3": _PATTERN_MAP_GEN4,
+    "gen4": _PATTERN_MAP_GEN4,
+    "gen5": _PATTERN_MAP_GEN5,
+    "gen6": _PATTERN_MAP_GEN6,
+}
+_ALL_PATTERN_NAMES = sorted(
+    set().union(*[m.keys() for m in _GEN_TO_PATTERN_MAP.values()])
+)
 _SPEED_MAP = {
     "gen1": 1, "gen2": 2, "gen3": 3, "gen4": 4, "gen5": 5, "gen6": 6,
 }
@@ -144,7 +161,7 @@ def loopback(device_path: str, port_id: int, enable: bool, ltssm_speed: str) -> 
 @click.argument("port_id", type=click.IntRange(0, 59))
 @click.option(
     "--pattern",
-    type=click.Choice(list(_PATTERN_MAP.keys()), case_sensitive=False),
+    type=click.Choice(_ALL_PATTERN_NAMES, case_sensitive=False),
     default="prbs31",
     help="Pattern type.",
 )
@@ -154,12 +171,26 @@ def loopback(device_path: str, port_id: int, enable: bool, ltssm_speed: str) -> 
     default="gen4",
     help="Link speed for pattern.",
 )
-def patgen(device_path: str, port_id: int, pattern: str, speed: str) -> None:
+@click.option(
+    "--gen",
+    type=click.Choice(list(_GEN_TO_PATTERN_MAP.keys()), case_sensitive=False),
+    default="gen4",
+    help="PCIe generation for pattern encoding (gen3, gen4, gen5, gen6).",
+)
+def patgen(device_path: str, port_id: int, pattern: str, speed: str, gen: str) -> None:
     """Set pattern generator on a port."""
     try:
+        pat_map = _GEN_TO_PATTERN_MAP[gen.lower()]
+        pat_key = pattern.lower()
+        if pat_key not in pat_map:
+            raise click.BadParameter(
+                f"Pattern '{pattern}' is not valid for {gen}. "
+                f"Valid patterns: {', '.join(sorted(pat_map.keys()))}",
+                param_hint="'--pattern'",
+            )
         with SwitchtecDevice.open(device_path) as dev:
-            from serialcables_switchtec.bindings.constants import DiagPattern, DiagPatternLinkRate
-            pat_val = DiagPattern(_PATTERN_MAP[pattern.lower()])
+            from serialcables_switchtec.bindings.constants import DiagPatternLinkRate
+            pat_val = pat_map[pat_key]
             spd_val = DiagPatternLinkRate(_SPEED_MAP[speed.lower()])
             dev.diagnostics.pattern_gen_set(port_id, pattern=pat_val, link_speed=spd_val)
             click.echo(f"Pattern generator set: {pattern} at {speed} on port {port_id}.")
@@ -285,6 +316,43 @@ def cto(device_path: str, port_id: int) -> None:
         with SwitchtecDevice.open(device_path) as dev:
             dev.injector.inject_cto(port_id)
             click.echo(f"Completion timeout injected on port {port_id}.")
+    except SwitchtecError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+
+# ─── AER Event Generation ─────────────────────────────────────────
+
+
+@diag.command("aer-gen")
+@click.argument("device_path")
+@click.argument("port_id", type=click.IntRange(0, 59))
+@click.option("--error-id", required=True, type=click.IntRange(0, 0xFFFF), help="AER error type identifier.")
+@click.option("--trigger", default=0, type=click.IntRange(0, 0xFFFF), help="Event trigger flag.")
+@click.pass_context
+def aer_gen(
+    ctx: click.Context,
+    device_path: str,
+    port_id: int,
+    error_id: int,
+    trigger: int,
+) -> None:
+    """Generate an AER event on a port."""
+    try:
+        with SwitchtecDevice.open(device_path) as dev:
+            dev.diagnostics.aer_event_gen(port_id, error_id, trigger)
+            if ctx.obj.get("json_output"):
+                click.echo(json.dumps({
+                    "port_id": port_id,
+                    "error_id": error_id,
+                    "trigger": trigger,
+                    "generated": True,
+                }))
+            else:
+                click.echo(
+                    f"AER event generated on port {port_id} "
+                    f"(error_id={error_id}, trigger={trigger})."
+                )
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
         raise click.Abort()

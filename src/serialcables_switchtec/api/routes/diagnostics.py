@@ -14,7 +14,6 @@ from serialcables_switchtec.bindings.constants import (
     DiagEnd,
     DiagLink,
     DiagLtssmSpeed,
-    DiagPattern,
     DiagPatternLinkRate,
 )
 from serialcables_switchtec.core.error_injection import ErrorInjector
@@ -195,7 +194,7 @@ def loopback_set(
 
 
 class PatternGenRequest(BaseModel):
-    pattern: int = Field(default=3, ge=0, le=6)
+    pattern: int = Field(default=3, ge=0, le=0x1A)
     link_speed: int = Field(default=4, ge=1, le=6)
 
 
@@ -211,7 +210,7 @@ def pattern_gen_set(
         diag = dev.diagnostics
         diag.pattern_gen_set(
             port_id,
-            pattern=DiagPattern(request.pattern),
+            pattern=request.pattern,
             link_speed=DiagPatternLinkRate(request.link_speed),
         )
         return {"status": "ok"}
@@ -460,3 +459,28 @@ def crosshair_get(
         return diag.cross_hair_get(start_lane, num_lanes)
     except Exception as e:
         raise_on_error(e, "crosshair_get")
+
+
+# --- AER Event Generation ---------------------------------------------------
+
+
+class AerEventGenRequest(BaseModel):
+    error_id: int = Field(ge=0, le=0xFFFF)
+    trigger: int = Field(default=0, ge=0, le=0xFFFF)
+
+
+@router.post("/{device_id}/diag/aer-gen/{port_id}")
+def aer_event_gen(
+    device_id: str = Path(pattern=DEVICE_ID_PATTERN),
+    port_id: int = Path(ge=0, le=59),
+    request: AerEventGenRequest = ...,
+) -> dict[str, str]:
+    """Generate an AER event on a port."""
+    injection_limiter.check(device_id)
+    dev = get_device(device_id)
+    try:
+        diag = dev.diagnostics
+        diag.aer_event_gen(port_id, request.error_id, request.trigger)
+        return {"status": "generated"}
+    except Exception as e:
+        raise_on_error(e, "aer_event_gen")
