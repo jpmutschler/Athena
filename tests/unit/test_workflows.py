@@ -60,7 +60,7 @@ def _make_port_status(phys_id=0, link_up=True, link_rate="16 GT/s", neg_lnk_widt
 
 
 def _make_device_summary(die_temperature=42.5):
-    """Create a mock DeviceSummary returned by dev.identify()."""
+    """Create a mock DeviceSummary returned by dev.get_summary()."""
     summary = MagicMock()
     summary.die_temperature = die_temperature
     return summary
@@ -77,7 +77,7 @@ def _make_mock_device():
     """Create a MagicMock device with diagnostics sub-mock wired up."""
     dev = MagicMock()
     dev.get_status = MagicMock(return_value=[])
-    dev.identify = MagicMock(return_value=_make_device_summary())
+    dev.get_summary = MagicMock(return_value=_make_device_summary())
     dev.diagnostics = MagicMock()
     dev.diagnostics.pattern_gen_set = MagicMock()
     dev.diagnostics.pattern_mon_set = MagicMock()
@@ -123,7 +123,7 @@ class TestAllPortSweep:
         port0 = _make_port_status(phys_id=0, link_up=True)
         port1 = _make_port_status(phys_id=1, link_up=False)
         dev.get_status.return_value = [port0, port1]
-        dev.identify.return_value = _make_device_summary(55.0)
+        dev.get_summary.return_value = _make_device_summary(55.0)
 
         results, summary = _run_recipe(recipe, dev)
         final = _final_results(results)
@@ -164,7 +164,7 @@ class TestAllPortSweep:
         recipe = AllPortSweep()
         dev = _make_mock_device()
         dev.get_status.return_value = [_make_port_status()]
-        dev.identify.return_value = _make_device_summary(105.0)
+        dev.get_summary.return_value = _make_device_summary(105.0)
 
         results, summary = _run_recipe(recipe, dev)
         final = _final_results(results)
@@ -180,7 +180,7 @@ class TestAllPortSweep:
         recipe = AllPortSweep()
         dev = _make_mock_device()
         dev.get_status.return_value = [_make_port_status()]
-        dev.identify.side_effect = SwitchtecError("temp read fail", -1)
+        dev.get_summary.side_effect = SwitchtecError("temp read fail", -1)
 
         results, summary = _run_recipe(recipe, dev)
         final = _final_results(results)
@@ -281,7 +281,7 @@ class TestAllPortSweep:
         recipe = AllPortSweep()
         dev = _make_mock_device()
         dev.get_status.return_value = [_make_port_status()]
-        dev.identify.return_value = _make_device_summary(42.0)
+        dev.get_summary.return_value = _make_device_summary(42.0)
 
         _, summary = _run_recipe(recipe, dev)
 
@@ -301,7 +301,7 @@ class TestAllPortSweep:
             _make_port_status(phys_id=1, link_up=False),
         ]
         dev.get_status.return_value = ports
-        dev.identify.return_value = _make_device_summary(30.0)
+        dev.get_summary.return_value = _make_device_summary(30.0)
 
         results, summary = _run_recipe(recipe, dev)
         final = _final_results(results)
@@ -314,7 +314,7 @@ class TestAllPortSweep:
         recipe = AllPortSweep()
         dev = _make_mock_device()
         dev.get_status.return_value = []
-        dev.identify.return_value = _make_device_summary(42.0)
+        dev.get_summary.return_value = _make_device_summary(42.0)
 
         results, summary = _run_recipe(recipe, dev)
         final = _final_results(results)

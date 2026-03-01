@@ -1293,7 +1293,9 @@ class TestServeCommand:
             result = runner.invoke(cli, ["serve"])
 
         assert result.exit_code == 0
-        mock_create_app.assert_called_once()
+        mock_create_app.assert_called_once_with(
+            cors_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
+        )
         mock_uvicorn.run.assert_called_once_with(mock_app, host="127.0.0.1", port=8000)
 
     @patch("serialcables_switchtec.api.app.create_app")
@@ -1309,7 +1311,32 @@ class TestServeCommand:
             )
 
         assert result.exit_code == 0
+        mock_create_app.assert_called_once_with(
+            cors_origins=["http://localhost:9090", "http://127.0.0.1:9090"],
+        )
         mock_uvicorn.run.assert_called_once_with(mock_app, host="0.0.0.0", port=9090)
+
+    @patch("serialcables_switchtec.api.app.create_app")
+    def test_serve_custom_cors_origins(self, mock_create_app):
+        mock_app = MagicMock()
+        mock_create_app.return_value = mock_app
+        mock_uvicorn = MagicMock()
+
+        with patch.dict("sys.modules", {"uvicorn": mock_uvicorn}):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                [
+                    "serve",
+                    "--host", "0.0.0.0",
+                    "--cors-origins", "http://10.0.0.50:8000,http://labpc:8000",
+                ],
+            )
+
+        assert result.exit_code == 0
+        mock_create_app.assert_called_once_with(
+            cors_origins=["http://10.0.0.50:8000", "http://labpc:8000"],
+        )
 
     def test_serve_import_error(self):
         import builtins

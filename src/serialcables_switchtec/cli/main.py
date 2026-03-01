@@ -24,7 +24,17 @@ def cli(ctx: click.Context, debug: bool, json_output: bool) -> None:
 @cli.command()
 @click.option("--host", default="127.0.0.1", show_default=True, help="API server host. Use 0.0.0.0 for network access.")
 @click.option("--port", default=8000, type=int, help="API server port.")
-def serve(host: str, port: int) -> None:
+@click.option(
+    "--cors-origins",
+    default=None,
+    help=(
+        "Comma-separated CORS origins. "
+        "Use '*' to allow all origins (lab networks). "
+        "Defaults to http://localhost:<port> and http://127.0.0.1:<port>. "
+        "Can also be set via ATHENA_CORS_ORIGINS env var."
+    ),
+)
+def serve(host: str, port: int, cors_origins: str | None) -> None:
     """Start the API server and NiceGUI dashboard."""
     try:
         import uvicorn
@@ -38,7 +48,18 @@ def serve(host: str, port: int) -> None:
         )
         raise click.Abort()
 
-    app = create_app()
+    origins: list[str] | None = None
+    if cors_origins is not None:
+        origins = [o.strip() for o in cors_origins.split(",") if o.strip()]
+    else:
+        # Auto-generate origins from the configured host/port so that
+        # remote access works out of the box when --host 0.0.0.0 is used.
+        origins = [
+            f"http://localhost:{port}",
+            f"http://127.0.0.1:{port}",
+        ]
+
+    app = create_app(cors_origins=origins)
     uvicorn.run(app, host=host, port=port)
 
 

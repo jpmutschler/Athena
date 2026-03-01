@@ -94,8 +94,31 @@ _OPENAPI_TAGS = [
 ]
 
 
-def create_app() -> FastAPI:
-    """Create and configure the FastAPI application."""
+_DEFAULT_CORS_ORIGINS = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
+
+def create_app(
+    cors_origins: list[str] | None = None,
+) -> FastAPI:
+    """Create and configure the FastAPI application.
+
+    Args:
+        cors_origins: Allowed CORS origins.  Falls back to the
+            ``ATHENA_CORS_ORIGINS`` env-var (comma-separated) and finally
+            to localhost-only defaults.
+    """
+    import os
+
+    if cors_origins is None:
+        env_origins = os.environ.get("ATHENA_CORS_ORIGINS")
+        if env_origins:
+            cors_origins = [o.strip() for o in env_origins.split(",") if o.strip()]
+        else:
+            cors_origins = list(_DEFAULT_CORS_ORIGINS)
+
     app = FastAPI(
         title="Athena API",
         description=(
@@ -109,10 +132,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:8000",
-            "http://127.0.0.1:8000",
-        ],
+        allow_origins=cors_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["Content-Type", "Authorization", "X-API-Key"],

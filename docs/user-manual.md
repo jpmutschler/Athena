@@ -1721,6 +1721,123 @@ Athena requires a modern web browser with **WebSocket support**. Tested browsers
 
 If you experience rendering issues, ensure your browser is up to date and that JavaScript and WebSockets are not blocked by network policies or browser extensions.
 
+### MRPC Timeout / Communication Stall
+
+**Symptom:** Operations hang and then fail with `SwitchtecTimeoutError` or `MrpcError: No available MRPC thread`.
+
+**Possible causes and solutions:**
+
+| Cause | Solution |
+|---|---|
+| Firmware boot still in progress | Wait for the switch to complete boot (check boot phase on Dashboard — should be `MAIN_FW`, not `BL2`). MRPC commands are unavailable during early boot. |
+| Bad firmware state | The switch firmware may be in a degraded state (error code `0x64007`). Try a hard reset from the Dashboard or `athena device hard-reset <path>`. If persistent, power-cycle the host. |
+| Diagnostic engine busy | Eye diagram capture, LTSSM logging, and pattern generation share the diagnostic engine. Cancel any running capture before starting a new operation. |
+| No available MRPC thread | The switch has a limited number of MRPC threads. If multiple tools or processes are sending commands simultaneously, threads can be exhausted. Close other Switchtec tools (vendor GUI, other Athena instances). |
+| PCIe link in recovery | If the link is continuously entering recovery, MRPC commands may be delayed. Check the LTSSM Trace page for rapid state transitions. |
+
+**Debug steps:**
+
+1. Run `athena device info <path>` from the CLI to check basic device responsiveness.
+2. Check the server terminal for the full error code (e.g., `MRPC error 0x64001`).
+3. If the device is unresponsive, try `athena device hard-reset <path>`.
+4. As a last resort, power-cycle the host machine.
+
+### Link Not Training
+
+**Symptom:** Port shows `LINK DOWN` on the Ports page, or the LTSSM state is stuck in `Detect`, `Polling`, or `Compliance`.
+
+**Debug procedure:**
+
+1. **Check physical connectivity.** Verify the PCIe cable or card is firmly seated. For cabled connections (Serial Cables host cards), check both ends.
+
+2. **Check LTSSM state.** Navigate to the LTSSM Trace page and read the log for the affected port.
+   - **Stuck in Detect.Quiet:** No electrical presence detected. Check physical connection, slot power, and that the endpoint is powered.
+   - **Stuck in Detect.Active:** Receiver detection is finding something but cannot proceed. Check for impedance mismatches or damaged connectors.
+   - **Cycling Polling → Detect:** TS1/TS2 ordered sets are not being received correctly. Check signal integrity — may need retimers or shorter cables.
+   - **Stuck in Polling.Compliance:** The link partner is not responding to TS1/TS2. Verify the endpoint firmware supports the configured link speed.
+   - **Cycling Config → Recovery → Config:** Equalization is failing. Check TX EQ coefficients on the Equalization page. Try reducing the target link speed.
+
+3. **Check the OSA page.** Use the Ordered Set Analyzer to capture TS1/TS2 during link training to verify ordered set content, lane numbers, and link/speed negotiation fields.
+
+4. **Run the Link Training Debug recipe.** Navigate to the Workflows page and run "Link Training Debug" which automates LTSSM log capture, transition counting, and result analysis.
+
+5. **Check the Eye Diagram.** If the link trains at a lower speed or width than expected, capture an eye diagram at the current speed to assess signal quality. Look for eye closure (height < 20mV or width < 0.15 UI indicates margin problems).
+
+### Error Injection Not Working
+
+**Symptom:** Error injection commands succeed but no errors appear on the link partner, or link does not go through recovery.
+
+**Possible causes and solutions:**
+
+| Cause | Solution |
+|---|---|
+| Wrong port selected | Error injection targets the specified physical port. Verify you are injecting on the correct port (check Ports page for port mapping). |
+| Rate-based injector still disabled | DLLP CRC and TLP LCRC injectors must be explicitly enabled. Use the Error Injection page enable toggle, not just the inject button. |
+| Link partner has error forwarding disabled | The link partner's AER capability may not be configured to detect the injected error type. This is a link-partner-side configuration issue. |
+| Injection rate limit reached | Athena limits error injection to 10 per 60 seconds to prevent hardware damage. Wait for the rate limiter to reset, or use the CLI for higher-frequency testing. |
+| Link is down | Error injection requires an active link. Verify the port is `LINK UP` before injecting. |
+
+### Pattern Generator / BER Test Issues
+
+**Symptom:** Pattern generator shows zero errors even with a known-bad link, or BER measurements are unexpectedly high.
+
+**Possible causes and solutions:**
+
+| Cause | Solution |
+|---|---|
+| Loopback not enabled | BER testing requires loopback mode. Verify loopback is enabled on the BER Testing page before starting pattern gen/mon. |
+| Wrong generation selected | Pattern IDs differ between Gen4, Gen5, and Gen6. Verify the generation matches the current link speed. Athena's generation-specific pattern maps handle this automatically, but manual API calls must use the correct IDs. |
+| Pattern monitor not started | The monitor must be configured and started after the generator. On the BER Testing page, configure the generator first, then start the monitor. |
+| Lane mismatch | Pattern gen/mon operates per-lane. Ensure you are monitoring the same lanes where the generator is active. |
+| Pattern monitor disabled (error `0x70b02`) | The pattern monitor was not enabled before reading. Enable it via the BER Testing page before reading results. |
+
+### Firmware Write Failures
+
+**Symptom:** Firmware write operation fails partway through or produces a verification error.
+
+**Possible causes and solutions:**
+
+| Cause | Solution |
+|---|---|
+| Boot RO is enabled | Disable boot read-only protection before writing. Use the Firmware page to toggle Boot RO off. |
+| Wrong partition selected | Verify you are writing to the inactive partition. Writing to the active partition while running from it will fail. |
+| Image file too large or incompatible | Verify the firmware image matches the switch model (PSX/PFX/PAX) and partition type (IMG0/IMG1/CFG0/CFG1). |
+| Communication interrupted | Firmware write is a long-running operation. Do not close the browser tab, disconnect the device, or stop the server during a write. |
+| Device in BL2 phase | Full firmware operations require the main firmware to be running. If stuck in BL2, the device may need recovery-mode firmware programming via JTAG or I2C. |
+
+### Performance Monitoring Shows Zero Bandwidth
+
+**Symptom:** Bandwidth charts on the Performance page show flat zero even with active traffic.
+
+**Possible causes and solutions:**
+
+| Cause | Solution |
+|---|---|
+| No traffic flowing | Bandwidth counters measure actual PCIe TLP traffic. Verify the endpoint is generating traffic (e.g., DMA transfers, NVMe I/O). |
+| Wrong port pair selected | Bandwidth is measured between an ingress and egress port pair. Verify the selected ports match the traffic path through the switch. |
+| Counters not started | Click "Start Monitoring" on the Performance page to begin counter polling. |
+| Polling interval too fast | Very short poll intervals may show zero if the counter delta is below the measurement resolution. Try a 1-second interval. |
+
+### Remote Access / CORS Errors
+
+**Symptom:** Browser shows CORS errors when accessing the dashboard from a remote machine.
+
+**Solution:** Configure allowed CORS origins when starting the server:
+
+```bash
+# Allow access from a specific lab machine
+athena serve --host 0.0.0.0 --cors-origins "http://10.0.0.50:8000"
+
+# Allow all origins (open lab networks only)
+athena serve --host 0.0.0.0 --cors-origins "*"
+
+# Or via environment variable
+export ATHENA_CORS_ORIGINS="http://labpc.corp:8000,http://10.0.0.50:8000"
+athena serve --host 0.0.0.0
+```
+
+See the [Configuration Guide](setup/configuration.md) for details.
+
 ### General Diagnostics
 
 If you encounter unexpected behavior:
@@ -1730,6 +1847,22 @@ If you encounter unexpected behavior:
 3. **Refresh the page** to re-establish the WebSocket connection and re-render from current state.
 4. **Restart the server** (`Ctrl+C` then `athena serve` again) to reset all state.
 5. **Verify device access** independently using the `switchtec` CLI tools to confirm the device is responsive.
+6. **Enable debug logging** with `athena --debug serve` to get verbose output including MRPC command/response tracing.
+
+### Common Error Codes Quick Reference
+
+| Error | Exception | Meaning | First Thing to Try |
+|---|---|---|---|
+| `errno 19 (ENODEV)` | `DeviceNotFoundError` | Device not present | Check physical connection, `ls /dev/switchtec*` |
+| `errno 13 (EACCES)` | `SwitchtecPermissionError` | Permission denied | Add udev rule or run with `sudo` |
+| `errno 110 (ETIMEDOUT)` | `SwitchtecTimeoutError` | Operation timed out | Reduce capture range, check link state |
+| `MRPC 0x64001` | `MrpcError` | No MRPC thread available | Close other Switchtec tools, wait and retry |
+| `MRPC 0x64007` | `MrpcError` | Bad firmware state | Hard reset or power-cycle |
+| `MRPC 0x64010` | `SwitchtecPermissionError` | MRPC command denied | Check firmware permissions, update firmware |
+| `MRPC 0x0000004a` | `UnsupportedError` | Feature not supported | Verify firmware version supports this feature |
+| `MRPC 0x70b02` | `MrpcError` | Pattern monitor disabled | Enable pattern monitor before reading |
+| `General 0x20000004` | `InvalidPortError` | Invalid port number | Verify port exists on this switch variant |
+| `General 0x20000005` | `InvalidLaneError` | Invalid lane number | Check negotiated link width for valid lane range |
 
 ---
 

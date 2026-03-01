@@ -7,6 +7,7 @@
 | `SWITCHTEC_LIB_DIR` | No | (auto-detect) | Directory containing `libswitchtec.so` or `switchtec.dll` |
 | `SWITCHTEC_API_KEY` | No | (disabled) | API key for X-API-Key header authentication |
 | `ATHENA_LOG_LEVEL` | No | `INFO` | Logging level: DEBUG, INFO, WARNING, ERROR |
+| `ATHENA_CORS_ORIGINS` | No | localhost only | Comma-separated allowed CORS origins (e.g., `http://10.0.0.50:8000,http://labpc:8000`) |
 
 See [`.env.example`](../../.env.example) for a template.
 
@@ -40,15 +41,31 @@ Server configuration is set via CLI flags:
 athena serve [OPTIONS]
 
 Options:
-  --host TEXT     Bind address (default: 127.0.0.1)
-  --port INTEGER  Bind port (default: 8000)
+  --host TEXT          Bind address (default: 127.0.0.1)
+  --port INTEGER       Bind port (default: 8000)
+  --cors-origins TEXT  Comma-separated CORS origins (default: localhost)
 ```
 
 ### CORS
 
-CORS origins are restricted to localhost by default:
-- `http://localhost:8000`
-- `http://127.0.0.1:8000`
+CORS origins default to `http://localhost:<port>` and `http://127.0.0.1:<port>`.
+
+For **remote lab access** (e.g., switch in a test rack, VE at their desk), configure
+allowed origins using one of three methods:
+
+```bash
+# Method 1: CLI flag
+athena serve --host 0.0.0.0 --cors-origins "http://10.0.0.50:8000,http://labpc.corp:8000"
+
+# Method 2: Environment variable
+export ATHENA_CORS_ORIGINS="http://10.0.0.50:8000,http://labpc.corp:8000"
+athena serve --host 0.0.0.0
+
+# Method 3: Allow all origins (open lab networks only)
+athena serve --host 0.0.0.0 --cors-origins "*"
+```
+
+**Priority:** `--cors-origins` flag > `ATHENA_CORS_ORIGINS` env var > localhost defaults.
 
 ### Rate Limiting
 

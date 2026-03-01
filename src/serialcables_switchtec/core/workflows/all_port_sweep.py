@@ -108,7 +108,7 @@ class AllPortSweep(Recipe):
             return self._make_summary(results, time.monotonic() - start, aborted=True)
 
         try:
-            summary = dev.identify()
+            summary = dev.get_summary()
             temp = summary.die_temperature
             status = StepStatus.PASS if temp < 100 else StepStatus.WARN
             result = self._make_result(
