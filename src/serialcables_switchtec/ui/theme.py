@@ -60,6 +60,23 @@ def gen_color(gen_str: str) -> str:
     return GEN_COLORS.get(gen_number(gen_str), "#9e9e9e")
 
 
+def plotly_layout_defaults() -> dict:
+    """Standard dark theme layout for Plotly charts.
+
+    Returns a dict of layout properties that align Plotly charts with the
+    Athena dashboard dark theme.  Callers can merge additional keys via
+    ``{**plotly_layout_defaults(), "title": "My Chart"}``.
+    """
+    return {
+        "plot_bgcolor": COLORS.bg_card,
+        "paper_bgcolor": COLORS.bg_primary,
+        "font": {"color": COLORS.text_primary, "family": "JetBrains Mono"},
+        "xaxis": {"gridcolor": COLORS.text_muted, "zerolinecolor": COLORS.text_muted},
+        "yaxis": {"gridcolor": COLORS.text_muted, "zerolinecolor": COLORS.text_muted},
+        "margin": {"l": 50, "r": 20, "t": 30, "b": 40},
+    }
+
+
 def apply_dark_theme() -> str:
     """Return CSS for dark theme styling."""
     return f"""

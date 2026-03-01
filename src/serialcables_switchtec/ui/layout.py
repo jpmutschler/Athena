@@ -13,9 +13,16 @@ _NAV_ITEMS = [
     ("Discovery", "/", "search"),
     ("Dashboard", "/dashboard", "dashboard"),
     ("Ports", "/ports", "device_hub"),
+    ("Firmware", "/firmware", "system_update"),
+    ("Events", "/events", "notifications"),
+    ("Event Counters", "/evcntr", "bar_chart"),
     ("Eye Diagram", "/eye", "visibility"),
     ("LTSSM Trace", "/ltssm", "timeline"),
     ("Performance", "/performance", "speed"),
+    ("Workflows", "/workflows", "play_circle"),
+    ("Fabric", "/fabric", "hub"),
+    ("Injection", "/injection", "warning"),
+    ("OSA", "/osa", "analytics"),
 ]
 
 
@@ -32,6 +39,7 @@ def page_layout(
     """
     from serialcables_switchtec.ui import state
 
+    ui.page_title(f"Athena - {title}")
     ui.add_css(apply_dark_theme())
 
     # --- Header ---

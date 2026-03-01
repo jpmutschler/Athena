@@ -27,6 +27,7 @@ _active_device: SwitchtecDevice | None = None
 _active_path: str = ""
 _cached_summary: DeviceSummary | None = None
 _state_lock = threading.Lock()
+_connect_lock = threading.Lock()  # Serializes connect_device calls
 
 
 def connect_device(path: str) -> DeviceSummary:
@@ -47,7 +48,16 @@ def connect_device(path: str) -> DeviceSummary:
     global _active_device, _active_path, _cached_summary
     from serialcables_switchtec.core.device import SwitchtecDevice
 
-    # Open new device OUTSIDE the lock (I/O operation)
+    with _connect_lock:
+        return _connect_device_inner(path)
+
+
+def _connect_device_inner(path: str) -> DeviceSummary:
+    """Inner connect logic, called under _connect_lock."""
+    global _active_device, _active_path, _cached_summary
+    from serialcables_switchtec.core.device import SwitchtecDevice
+
+    # Open new device OUTSIDE the state lock (I/O operation)
     new_dev = SwitchtecDevice.open(path)
     try:
         summary = new_dev.get_summary()
@@ -126,7 +136,7 @@ def refresh_summary() -> DeviceSummary | None:
         with _state_lock:
             _cached_summary = summary
         return summary
-    except SwitchtecError:
+    except (SwitchtecError, OSError):
         logger.exception("summary_refresh_failed")
         return None
 
@@ -139,7 +149,7 @@ def get_port_status() -> list[PortStatus]:
         return []
     try:
         return dev.get_status()
-    except SwitchtecError:
+    except (SwitchtecError, OSError):
         logger.exception("port_status_failed")
         return []
 

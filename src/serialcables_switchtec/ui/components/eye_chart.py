@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from nicegui import ui
 
+from serialcables_switchtec.ui.theme import plotly_layout_defaults
+
 
 def eye_heatmap(
     pixels: list[float],
@@ -18,6 +20,20 @@ def eye_heatmap(
         row = pixels[y * x_count : (y + 1) * x_count]
         z_data.append(row)
 
+    defaults = plotly_layout_defaults()
+    layout = {
+        **defaults,
+        "title": title,
+        "xaxis": {
+            **defaults["xaxis"],
+            "title": "Phase (UI)",
+        },
+        "yaxis": {
+            **defaults["yaxis"],
+            "title": "Voltage (mV)",
+        },
+    }
+
     fig = {
         "data": [{
             "type": "heatmap",
@@ -25,13 +41,6 @@ def eye_heatmap(
             "colorscale": "Hot",
             "reversescale": True,
         }],
-        "layout": {
-            "title": title,
-            "xaxis": {"title": "Phase (UI)"},
-            "yaxis": {"title": "Voltage (mV)"},
-            "paper_bgcolor": "#2d2d3f",
-            "plot_bgcolor": "#1e1e2e",
-            "font": {"color": "#e0e0e0"},
-        },
+        "layout": layout,
     }
     ui.plotly(fig).classes("w-full").style("height: 500px")
