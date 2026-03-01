@@ -170,19 +170,28 @@ class LoopbackSweep(Recipe):
                 step_idx += 1
                 continue
 
+            # Read baseline error counts before soak
+            baseline: dict[int, int] = {}
+            for lane in range(lane_count):
+                try:
+                    mon = dev.diagnostics.pattern_mon_get(port_id, lane)
+                    baseline[lane] = mon.error_count
+                except SwitchtecError:
+                    baseline[lane] = 0
+
             # Soak for duration (cancellable)
             deadline = time.monotonic() + dur_per
             while time.monotonic() < deadline:
                 if cancel.is_set():
                     break
-                time.sleep(min(0.5, deadline - time.monotonic()))
+                time.sleep(min(0.5, max(0, deadline - time.monotonic())))
 
-            # Read errors
+            # Read errors (delta from baseline)
             total_err = 0
             for lane in range(lane_count):
                 try:
                     mon = dev.diagnostics.pattern_mon_get(port_id, lane)
-                    total_err += mon.error_count
+                    total_err += max(0, mon.error_count - baseline.get(lane, 0))
                 except SwitchtecError:
                     pass
 

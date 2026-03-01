@@ -136,6 +136,7 @@ class BerSoak(Recipe):
         yield r
 
         if cancel.is_set():
+            _cleanup_patgen(dev, port_id, speed_name)
             return self._make_summary(results, time.monotonic() - start, aborted=True)
 
         # Step 3: Configure pattern monitor
@@ -158,6 +159,7 @@ class BerSoak(Recipe):
         yield r
 
         if cancel.is_set():
+            _cleanup_patgen(dev, port_id, speed_name)
             return self._make_summary(results, time.monotonic() - start, aborted=True)
 
         # Step 4: Soak — poll error counts
@@ -175,7 +177,7 @@ class BerSoak(Recipe):
                     final_errors[lane] = mon.error_count
                 except SwitchtecError:
                     pass
-            time.sleep(min(_POLL_INTERVAL, duration_s - (time.monotonic() - soak_start)))
+            time.sleep(max(0, min(_POLL_INTERVAL, duration_s - (time.monotonic() - soak_start))))
 
         total_errors = sum(final_errors.values())
         status = StepStatus.PASS if total_errors == 0 else StepStatus.WARN
@@ -188,6 +190,7 @@ class BerSoak(Recipe):
         yield r
 
         if cancel.is_set():
+            _cleanup_patgen(dev, port_id, speed_name)
             return self._make_summary(results, time.monotonic() - start, aborted=True)
 
         # Step 5: Check LTSSM for retraining
@@ -227,3 +230,12 @@ class BerSoak(Recipe):
         yield r
 
         return self._make_summary(results, time.monotonic() - start)
+
+
+def _cleanup_patgen(dev: SwitchtecDevice, port_id: int, speed_name: str) -> None:
+    """Best-effort cleanup: disable pattern generator after cancel."""
+    try:
+        disabled_val = _DISABLED_BY_SPEED.get(speed_name, DiagPattern.DISABLED)
+        dev.diagnostics.pattern_gen_set(port_id, disabled_val, DiagPatternLinkRate.DISABLED)
+    except SwitchtecError:
+        pass

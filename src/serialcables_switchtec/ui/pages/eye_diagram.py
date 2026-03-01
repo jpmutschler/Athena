@@ -7,11 +7,20 @@ import json
 
 from nicegui import run, ui
 
+from serialcables_switchtec.bindings.constants import (
+    DiagEyeDataMode,
+    DiagEyeDataModeGen6,
+)
 from serialcables_switchtec.exceptions import SwitchtecError
 from serialcables_switchtec.ui.components.disconnected import show_disconnected
 from serialcables_switchtec.ui.components.eye_chart import eye_heatmap, eye_metrics_cards
 from serialcables_switchtec.ui.layout import page_layout
 from serialcables_switchtec.ui.theme import COLORS, plotly_layout_defaults
+
+# Eye data mode options per generation family
+_EYE_MODE_GEN3_5: dict[int, str] = {m.value: m.name for m in DiagEyeDataMode}
+_EYE_MODE_GEN6: dict[int, str] = {m.value: m.name for m in DiagEyeDataModeGen6}
+_GEN_SELECT = {"gen3_5": "Gen3-5 (NRZ)", "gen6": "Gen6 (PAM4)"}
 
 
 def eye_diagram_page() -> None:
@@ -65,6 +74,54 @@ def eye_diagram_page() -> None:
                 y_end_input = ui.number(
                     label="Y End", value=255, min=0, max=511,
                 ).classes("w-24")
+
+            ui.separator().classes("q-my-sm")
+
+            ui.label("Eye Data Mode").classes("text-subtitle1 q-mb-xs").style(
+                f"color: {COLORS.text_primary};"
+            )
+            with ui.row().classes("q-gutter-sm items-end flex-wrap"):
+                eye_gen_select = ui.select(
+                    options=_GEN_SELECT, label="Generation",
+                    value="gen3_5",
+                ).classes("w-36")
+                eye_mode_select = ui.select(
+                    options=_EYE_MODE_GEN3_5, label="Data Mode",
+                    value=DiagEyeDataMode.RAW.value,
+                ).classes("w-32")
+
+            def _on_eye_gen_change() -> None:
+                gen = eye_gen_select.value or "gen3_5"
+                new_opts = _EYE_MODE_GEN6 if gen == "gen6" else _EYE_MODE_GEN3_5
+                eye_mode_select.options = new_opts
+                eye_mode_select.update()
+                if eye_mode_select.value not in new_opts:
+                    eye_mode_select.set_value(next(iter(new_opts)))
+
+            eye_gen_select.on_value_change(lambda _: _on_eye_gen_change())
+
+            async def _on_set_mode() -> None:
+                dev = state.get_active_device()
+                if dev is None:
+                    return
+                mode_val = int(eye_mode_select.value or 0)
+                eye_mode_btn.props("loading")
+                try:
+                    await run.io_bound(dev.diagnostics.eye_set_mode, mode_val)
+                    mode_name = eye_mode_select.options.get(mode_val, str(mode_val))
+                    ui.notify(
+                        f"Eye data mode set to {mode_name}",
+                        type="positive", position="top",
+                    )
+                except SwitchtecError as exc:
+                    ui.notify(f"Set mode failed: {exc}", type="negative", position="top")
+                finally:
+                    eye_mode_btn.props(remove="loading")
+
+            eye_mode_btn = ui.button(
+                "Apply Mode", icon="tune",
+            ).props("flat").classes("q-mt-xs")
+            eye_mode_btn.on_click(_on_set_mode)
 
             with ui.row().classes("q-mt-md q-gutter-sm"):
                 start_btn = ui.button(

@@ -44,6 +44,16 @@ _LINK_RATE_OPTIONS = {
 }
 _GEN_SELECT_OPTIONS = {"gen3": "Gen 3", "gen4": "Gen 4", "gen5": "Gen 5", "gen6": "Gen 6"}
 
+# Link rate in GT/s per lane for BER calculation
+_LINK_RATE_GTS: dict[int, float] = {
+    DiagPatternLinkRate.GEN1.value: 2.5,
+    DiagPatternLinkRate.GEN2.value: 5.0,
+    DiagPatternLinkRate.GEN3.value: 8.0,
+    DiagPatternLinkRate.GEN4.value: 16.0,
+    DiagPatternLinkRate.GEN5.value: 32.0,
+    DiagPatternLinkRate.GEN6.value: 64.0,
+}
+
 _LANE_COLORS = [
     "#4fc3f7", "#66bb6a", "#ffa726", "#ef5350",
     "#ab47bc", "#26c6da", "#ffee58", "#ec407a",
@@ -258,7 +268,7 @@ def ber_testing_page() -> None:
                 if dev is None:
                     return
                 port = int(pg_port_input.value or 0)
-                pattern = int(pg_pattern_select.value)
+                pattern = int(pg_pattern_select.value or 3)
                 speed = DiagPatternLinkRate(int(pg_speed_select.value or 4))
                 pg_start_btn.props("loading")
                 try:
@@ -369,6 +379,11 @@ def ber_testing_page() -> None:
             elapsed = time.monotonic() - ber_state["start_time"]
             max_points = 120
 
+            # BER approximation: errors / total_bits (uses Pattern Generator speed)
+            speed_val = int(pg_speed_select.value or DiagPatternLinkRate.GEN4.value)
+            gts = _LINK_RATE_GTS.get(speed_val, 16.0)
+            bits_transferred = gts * 1e9 * max(0.0, elapsed)
+
             rows = []
             for lane in range(lanes):
                 try:
@@ -382,11 +397,18 @@ def ber_testing_page() -> None:
                 delta = result.error_count - prev
                 ber_state["prev_counts"][lane] = result.error_count
 
+                if bits_transferred > 0 and result.error_count > 0:
+                    ber = result.error_count / bits_transferred
+                    ber_str = f"{ber:.2e}"
+                else:
+                    ber_str = "0" if result.error_count == 0 else "N/A"
+
                 rows.append({
                     "lane": lane,
                     "pattern": result.pattern_type,
                     "errors": result.error_count,
                     "delta": delta,
+                    "ber": ber_str,
                 })
 
                 if lane not in ber_state["samples"]:
@@ -407,6 +429,7 @@ def ber_testing_page() -> None:
                         {"name": "pattern", "label": "Pattern Type", "field": "pattern", "align": "center"},
                         {"name": "errors", "label": "Error Count", "field": "errors", "align": "right", "sortable": True},
                         {"name": "delta", "label": "Delta", "field": "delta", "align": "right"},
+                        {"name": "ber", "label": "BER (approx)", "field": "ber", "align": "right"},
                     ]
                     ui.table(columns=columns, rows=rows, row_key="lane").classes("w-full")
 

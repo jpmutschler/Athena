@@ -18,6 +18,12 @@ from serialcables_switchtec.ui.theme import COLORS, plotly_layout_defaults
 _END_OPTIONS = {e.value: e.name.replace("_", " ").title() for e in DiagEnd}
 _LINK_OPTIONS = {lk.value: lk.name.title() for lk in DiagLink}
 
+# Cross-hair margin pass/fail thresholds (phase steps / voltage steps).
+# Conservative Gen4 NRZ defaults. Gen6 PAM4 eyes have smaller openings
+# and may need different thresholds.
+_MARGIN_THRESH_H = 20
+_MARGIN_THRESH_V = 30
+
 
 def equalization_page() -> None:
     """Equalization and cross-hair margin page."""
@@ -381,9 +387,16 @@ def equalization_page() -> None:
         ch_state: dict = {"timer": None, "measuring": False}
 
         async def _on_ch_start() -> None:
+            if ch_state["measuring"]:
+                return
             dev = state.get_active_device()
             if dev is None:
                 return
+            # Cancel any stale timer
+            old_timer = ch_state.get("timer")
+            if old_timer is not None:
+                old_timer.cancel()
+                ch_state["timer"] = None
             start_lane = int(ch_start_lane.value or 0)
 
             ch_start_btn.props("loading")
@@ -454,12 +467,15 @@ def equalization_page() -> None:
                     status_text = "DONE" if all_done else "ERROR"
                     ch_progress_label.set_text(f"Measurement {status_text}")
 
-                    # Render results table
+                    # Render results table with pass/fail assessment
                     ch_results_container.clear()
                     with ch_results_container:
                         columns = [
                             {"name": "lane", "label": "Lane", "field": "lane", "align": "center"},
                             {"name": "state", "label": "State", "field": "state", "align": "center"},
+                            {"name": "h_margin", "label": "H Margin", "field": "h_margin", "align": "right"},
+                            {"name": "v_margin", "label": "V Margin", "field": "v_margin", "align": "right"},
+                            {"name": "verdict", "label": "Verdict", "field": "verdict", "align": "center"},
                             {"name": "left", "label": "Left", "field": "left", "align": "right"},
                             {"name": "right", "label": "Right", "field": "right", "align": "right"},
                             {"name": "bot_left", "label": "Bot-Left", "field": "bot_left", "align": "right"},
@@ -467,20 +483,44 @@ def equalization_page() -> None:
                             {"name": "top_left", "label": "Top-Left", "field": "top_left", "align": "right"},
                             {"name": "top_right", "label": "Top-Right", "field": "top_right", "align": "right"},
                         ]
-                        rows = [
-                            {
+                        rows = []
+                        for r in results:
+                            h_margin = r.eye_left_lim + r.eye_right_lim
+                            v_top = (r.eye_top_left_lim + r.eye_top_right_lim) / 2
+                            v_bot = (r.eye_bot_left_lim + r.eye_bot_right_lim) / 2
+                            v_margin = v_top + v_bot
+                            # Thresholds: H >= 20 phase steps, V >= 30 voltage steps
+                            h_pass = h_margin >= _MARGIN_THRESH_H
+                            v_pass = v_margin >= _MARGIN_THRESH_V
+                            verdict = "PASS" if (h_pass and v_pass) else "FAIL"
+                            rows.append({
                                 "lane": r.lane_id,
                                 "state": r.state_name,
+                                "h_margin": h_margin,
+                                "v_margin": round(v_margin, 1),
+                                "verdict": verdict,
                                 "left": r.eye_left_lim,
                                 "right": r.eye_right_lim,
                                 "bot_left": r.eye_bot_left_lim,
                                 "bot_right": r.eye_bot_right_lim,
                                 "top_left": r.eye_top_left_lim,
                                 "top_right": r.eye_top_right_lim,
-                            }
-                            for r in results
-                        ]
+                            })
                         ui.table(columns=columns, rows=rows, row_key="lane").classes("w-full")
+
+                        # Summary verdict
+                        pass_count = sum(1 for row in rows if row["verdict"] == "PASS")
+                        fail_count = len(rows) - pass_count
+                        if fail_count == 0:
+                            ui.label(f"All {pass_count} lane(s) PASS margin thresholds "
+                                     f"(H >= {_MARGIN_THRESH_H}, V >= {_MARGIN_THRESH_V})").classes(
+                                "text-subtitle2 q-mt-sm"
+                            ).style(f"color: {COLORS.success};")
+                        else:
+                            ui.label(f"{fail_count} lane(s) FAIL margin thresholds "
+                                     f"(H >= {_MARGIN_THRESH_H}, V >= {_MARGIN_THRESH_V})").classes(
+                                "text-subtitle2 q-mt-sm"
+                            ).style(f"color: {COLORS.error};")
 
                     # Render margin diamond
                     done_results = [r for r in results if r.state == DiagCrossHairState.DONE]
