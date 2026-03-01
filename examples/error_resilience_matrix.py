@@ -347,6 +347,7 @@ def main() -> None:
 
     _log(f"Opening device {args.device}...")
     dev = SwitchtecDevice.open(args.device)
+    port_ids: list[int] = []
     try:
         _log("Discovering active ports...")
         port_ids = _discover_ports(dev, args.ports)

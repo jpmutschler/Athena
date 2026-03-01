@@ -183,7 +183,6 @@ def main() -> None:
             )
             if response.lower() != "y":
                 print("Aborted.", file=sys.stderr)
-                dev.close()
                 sys.exit(0)
 
         # Open CSV

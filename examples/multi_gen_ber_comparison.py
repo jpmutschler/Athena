@@ -407,19 +407,21 @@ def main() -> None:
             )
             if response.lower() != "y":
                 _log("Aborted.")
-                dev.close()
                 sys.exit(0)
 
         results: list[dict] = []
+        current_gen: str | None = None
         for gen_idx, gen in enumerate(gens):
             _log(
                 f"\n[{gen_idx + 1}/{len(gens)}] "
                 f"Testing {gen.upper()}..."
             )
+            current_gen = gen
             result = _measure_gen(
                 dev, args.port, gen, args.duration, args.lanes
             )
             results.append(result)
+            current_gen = None
 
             # Brief pause between generations
             if gen_idx < len(gens) - 1:
@@ -440,8 +442,8 @@ def main() -> None:
         _log("\nInterrupted by user. Cleaning up...")
         # Disable pattern gen and loopback on interrupt
         try:
-            gen = gens[0] if gens else "gen4"
-            disabled_val = GEN_PATTERN_DISABLED.get(gen, 6)
+            cleanup_gen = current_gen if current_gen else (gens[0] if gens else "gen4")
+            disabled_val = GEN_PATTERN_DISABLED.get(cleanup_gen, 6)
             dev.diagnostics.pattern_gen_set(
                 args.port, disabled_val, DiagPatternLinkRate.DISABLED
             )
