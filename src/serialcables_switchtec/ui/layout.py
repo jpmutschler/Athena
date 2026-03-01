@@ -21,6 +21,8 @@ _NAV_ITEMS = [
     ("Performance", "/performance", "speed"),
     ("Workflows", "/workflows", "play_circle"),
     ("Fabric", "/fabric", "hub"),
+    ("BER Testing", "/ber", "science"),
+    ("Equalization", "/equalization", "tune"),
     ("Injection", "/injection", "warning"),
     ("OSA", "/osa", "analytics"),
 ]

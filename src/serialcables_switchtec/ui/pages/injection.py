@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 from nicegui import run, ui
@@ -9,6 +10,7 @@ from nicegui import run, ui
 from serialcables_switchtec.exceptions import SwitchtecError
 from serialcables_switchtec.ui.components.confirm_dialog import confirm_action
 from serialcables_switchtec.ui.components.disconnected import show_disconnected
+from serialcables_switchtec.ui.components.ltssm_timeline import ltssm_timeline
 from serialcables_switchtec.ui.layout import page_layout
 from serialcables_switchtec.ui.theme import COLORS
 
@@ -41,6 +43,7 @@ def injection_page() -> None:
 
         _injection_section(history, table_ref)
         _aer_section(history, table_ref)
+        _verification_section()
         _history_section(history, table_ref)
 
 
@@ -328,6 +331,190 @@ def _aer_section(
                 await _do_aer()
 
         aer_btn.on_click(_on_aer)
+
+
+# ── Post-Injection Link Verification ───────────────────────────────
+
+
+def _verification_section() -> None:
+    """Post-injection link verification section."""
+    with ui.card().classes("w-full q-pa-md q-mb-md"):
+        ui.label("Post-Injection Link Verification").classes("text-h6 q-mb-sm")
+
+        ui.label(
+            "Verify link status after injection: captures pre/post link state "
+            "and LTSSM transitions to assess impact."
+        ).style(f"color: {COLORS.text_secondary}; font-size: 0.85em;")
+
+        with ui.row().classes("q-gutter-sm items-end flex-wrap q-mt-sm"):
+            verify_port = ui.number(
+                label="Port ID", value=0, min=0, max=59, step=1,
+            ).classes("w-24")
+            verify_duration = ui.number(
+                label="Duration (s)", value=5, min=1, max=30, step=1,
+            ).classes("w-28")
+
+        verify_btn = ui.button(
+            "Run Verification", icon="verified",
+        ).props("color=primary").classes("q-mt-sm")
+
+        verify_container = ui.column().classes("w-full q-mt-sm")
+
+        async def _on_verify() -> None:
+            from serialcables_switchtec.ui import state
+
+            dev = state.get_active_device()
+            if dev is None:
+                ui.notify("No device connected", type="negative", position="top")
+                return
+
+            port = int(verify_port.value or 0)
+            duration = int(verify_duration.value or 5)
+
+            verify_btn.props("loading")
+            verify_container.clear()
+
+            try:
+                # 1. Capture pre-state
+                pre_ports = await run.io_bound(state.get_port_status)
+                pre_link_up = False
+                for p in pre_ports:
+                    if p.port.phys_id == port:
+                        pre_link_up = p.link_up
+                        break
+
+                # Clear LTSSM log
+                await run.io_bound(dev.diagnostics.ltssm_clear, port)
+
+                # 2. Poll link status for duration
+                with verify_container:
+                    poll_label = ui.label("Monitoring link status...").classes(
+                        "text-subtitle2"
+                    ).style(f"color: {COLORS.text_secondary};")
+
+                link_went_down = False
+                link_recovered = False
+                down_time: float | None = None
+                recovery_time: float | None = None
+                start_t = time.monotonic()
+
+                poll_count = int(duration / 0.5)
+                for _ in range(poll_count):
+                    elapsed = time.monotonic() - start_t
+                    if elapsed >= duration:
+                        break
+
+                    try:
+                        ports_now = await run.io_bound(state.get_port_status)
+                    except SwitchtecError:
+                        await _async_sleep(0.5)
+                        continue
+
+                    current_up = False
+                    for p in ports_now:
+                        if p.port.phys_id == port:
+                            current_up = p.link_up
+                            break
+
+                    if not current_up and pre_link_up and not link_went_down:
+                        link_went_down = True
+                        down_time = elapsed
+
+                    if current_up and link_went_down and not link_recovered:
+                        link_recovered = True
+                        recovery_time = elapsed - (down_time or 0)
+
+                    poll_label.set_text(
+                        f"Monitoring... {elapsed:.1f}s / {duration}s"
+                    )
+                    await _async_sleep(0.5)
+
+                # 3. Capture post-state
+                post_ports = await run.io_bound(state.get_port_status)
+                post_link_up = False
+                for p in post_ports:
+                    if p.port.phys_id == port:
+                        post_link_up = p.link_up
+                        break
+
+                # 4. Read LTSSM log
+                try:
+                    ltssm_entries = await run.io_bound(
+                        dev.diagnostics.ltssm_log, port,
+                    )
+                except SwitchtecError:
+                    ltssm_entries = []
+
+                # 5. Render results
+                verify_container.clear()
+                with verify_container:
+                    # Pre/post link status badges
+                    with ui.row().classes("q-gutter-md q-mb-md items-center"):
+                        ui.label("Pre:").classes("text-subtitle2").style(
+                            f"color: {COLORS.text_secondary};"
+                        )
+                        _link_badge(pre_link_up)
+                        ui.label("Post:").classes("text-subtitle2").style(
+                            f"color: {COLORS.text_secondary};"
+                        )
+                        _link_badge(post_link_up)
+
+                    # Verdict banner
+                    if post_link_up and not link_went_down:
+                        _verdict_banner("Link Stable", COLORS.success, "check_circle")
+                    elif post_link_up and link_recovered:
+                        recovery_str = f" ({recovery_time:.1f}s)" if recovery_time else ""
+                        _verdict_banner(
+                            f"Link Recovered{recovery_str}",
+                            COLORS.warning, "replay",
+                        )
+                    else:
+                        _verdict_banner("Link Down", COLORS.error, "error")
+
+                    # LTSSM transitions
+                    if ltssm_entries:
+                        ui.label(
+                            f"{len(ltssm_entries)} LTSSM transitions detected"
+                        ).classes("text-subtitle2 q-mt-md q-mb-sm").style(
+                            f"color: {COLORS.text_secondary};"
+                        )
+                        ltssm_timeline(ltssm_entries)
+                    else:
+                        ui.label("No LTSSM transitions detected.").classes(
+                            "text-subtitle2 q-mt-sm"
+                        ).style(f"color: {COLORS.text_secondary};")
+
+                ui.notify("Verification complete", type="positive", position="top")
+
+            except SwitchtecError as exc:
+                ui.notify(f"Verification failed: {exc}", type="negative", position="top")
+            finally:
+                verify_btn.props(remove="loading")
+
+        verify_btn.on_click(_on_verify)
+
+
+async def _async_sleep(seconds: float) -> None:
+    """Async sleep helper."""
+    import asyncio
+    await asyncio.sleep(seconds)
+
+
+def _link_badge(link_up: bool) -> None:
+    """Render a link UP/DOWN badge."""
+    text = "UP" if link_up else "DOWN"
+    color = COLORS.success if link_up else COLORS.error
+    ui.badge(text).style(f"background-color: {color};")
+
+
+def _verdict_banner(text: str, color: str, icon_name: str) -> None:
+    """Render a colored verdict banner."""
+    with ui.card().classes("w-full q-pa-md q-mb-md").style(
+        f"border: 2px solid {color}; background: {color}15;"
+    ):
+        with ui.row().classes("items-center q-gutter-sm"):
+            ui.icon(icon_name).classes("text-h4").style(f"color: {color};")
+            ui.label(text).classes("text-h6 text-bold").style(f"color: {color};")
 
 
 # ── Injection History ───────────────────────────────────────────────

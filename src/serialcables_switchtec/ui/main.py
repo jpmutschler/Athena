@@ -18,6 +18,8 @@ from serialcables_switchtec.ui.pages.ltssm_trace import ltssm_trace_page
 from serialcables_switchtec.ui.pages.osa import osa_page
 from serialcables_switchtec.ui.pages.performance import performance_page
 from serialcables_switchtec.ui.pages.ports import ports_page
+from serialcables_switchtec.ui.pages.ber_testing import ber_testing_page
+from serialcables_switchtec.ui.pages.equalization import equalization_page
 from serialcables_switchtec.ui.pages.workflows import workflows_page
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -74,6 +76,14 @@ def register_pages() -> None:
     @ui.page("/injection")
     def injection() -> None:
         injection_page()
+
+    @ui.page("/ber")
+    def ber() -> None:
+        ber_testing_page()
+
+    @ui.page("/equalization")
+    def equalization() -> None:
+        equalization_page()
 
     @ui.page("/osa")
     def osa() -> None:
