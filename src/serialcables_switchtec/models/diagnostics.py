@@ -18,7 +18,17 @@ class EyeRange(BaseModel):
 class EyeData(BaseModel):
     """Eye diagram capture result."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [{
+                "lane_id": 0,
+                "x_range": {"start": -32, "end": 32, "step": 1},
+                "y_range": {"start": -64, "end": 64, "step": 1},
+                "pixels": [0.0, 0.1, 0.5, 1.0],
+            }],
+        },
+    )
 
     lane_id: int
     x_range: EyeRange
@@ -88,7 +98,22 @@ class ReceiverExt(BaseModel):
 class CrossHairResult(BaseModel):
     """Cross-hair measurement result."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [{
+                "lane_id": 0,
+                "state": 2,
+                "state_name": "DONE",
+                "eye_left_lim": 15,
+                "eye_right_lim": 18,
+                "eye_bot_left_lim": 8,
+                "eye_bot_right_lim": 9,
+                "eye_top_left_lim": 10,
+                "eye_top_right_lim": 11,
+            }],
+        },
+    )
 
     lane_id: int
     state: int

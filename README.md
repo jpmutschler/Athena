@@ -28,6 +28,7 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 - [Python Library Usage](#python-library-usage)
 - [Project Structure](#project-structure)
 - [Configuration](#configuration)
+- [Documentation](#documentation)
 - [Testing](#testing)
 - [Development Status](#development-status)
 - [License](#license)
@@ -1204,6 +1205,17 @@ tests/
 |---|---|---|
 | `--host` | `127.0.0.1` | Bind address. Use `0.0.0.0` for network access. |
 | `--port` | `8000` | TCP port for the API server and dashboard. |
+
+---
+
+## Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [Quickstart](docs/setup/quickstart.md) | Get running in 5 minutes: install, build library, discover devices, start server |
+| [Configuration](docs/setup/configuration.md) | Environment variables, library search order, platform setup, troubleshooting |
+| [API Reference](docs/api/reference.md) | Full REST API docs with curl examples, SSE streaming, authentication |
+| [Swagger UI](http://localhost:8000/docs) | Interactive API explorer (available when server is running) |
 
 ---
 

@@ -37,6 +37,63 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("api_stopped")
 
 
+_OPENAPI_TAGS = [
+    {
+        "name": "devices",
+        "description": "Device registry: open, close, discover, and query Switchtec devices.",
+    },
+    {
+        "name": "ports",
+        "description": "Port status and PFF (Physical Function to Forwarding) mapping.",
+    },
+    {
+        "name": "diagnostics",
+        "description": (
+            "PCIe diagnostics: eye diagrams, LTSSM logs, loopback, "
+            "pattern gen/mon, error injection, receiver cal, equalization, cross-hair."
+        ),
+    },
+    {
+        "name": "firmware",
+        "description": "Firmware version, partition summary, image write, toggle, and boot RO.",
+    },
+    {
+        "name": "evcntr",
+        "description": "Event counters: setup, read counts, and BER monitoring.",
+    },
+    {
+        "name": "events",
+        "description": "Event summary, clear, and wait-for-event with timeout.",
+    },
+    {
+        "name": "fabric",
+        "description": (
+            "Fabric topology (PAX devices): port control, GFMS bind/unbind, "
+            "config space read/write."
+        ),
+    },
+    {
+        "name": "mrpc",
+        "description": "Raw MRPC commands for low-level firmware debugging.",
+    },
+    {
+        "name": "osa",
+        "description": "Ordered Set Analyzer: capture, type/pattern config, data fetch.",
+    },
+    {
+        "name": "performance",
+        "description": "Bandwidth counters and latency measurement between port pairs.",
+    },
+    {
+        "name": "monitor",
+        "description": (
+            "SSE streaming for continuous bandwidth and event counter monitoring. "
+            "Uses Server-Sent Events (text/event-stream) with NDJSON payloads."
+        ),
+    },
+]
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
@@ -47,6 +104,7 @@ def create_app() -> FastAPI:
         ),
         version="0.1.0",
         lifespan=lifespan,
+        openapi_tags=_OPENAPI_TAGS,
     )
 
     app.add_middleware(
@@ -88,6 +146,9 @@ def create_app() -> FastAPI:
     )
     from serialcables_switchtec.api.routes.performance import (
         router as perf_router,
+    )
+    from serialcables_switchtec.api.routes.monitor import (
+        router as monitor_router,
     )
     from serialcables_switchtec.api.routes.ports import (
         router as ports_router,
@@ -151,6 +212,12 @@ def create_app() -> FastAPI:
         perf_router,
         prefix="/api/devices",
         tags=["performance"],
+        dependencies=auth_dep,
+    )
+    app.include_router(
+        monitor_router,
+        prefix="/api/devices",
+        tags=["monitor"],
         dependencies=auth_dep,
     )
 

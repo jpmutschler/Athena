@@ -46,21 +46,23 @@ def eye_heatmap(
     ui.plotly(fig).classes("w-full").style("height: 500px")
 
 
-def eye_metrics_cards(
+def _compute_eye_metrics(
     pixels: list[float],
     x_count: int,
     y_count: int,
 ) -> dict[str, float]:
-    """Compute and display eye opening metrics from pixel data.
+    """Compute eye opening metrics from pixel data (pure math, no UI).
 
-    Renders stat cards for eye width, height, and area.
+    Args:
+        pixels: Flat list of pixel hit-count values.
+        x_count: Number of horizontal (phase) steps.
+        y_count: Number of vertical (voltage) steps.
 
     Returns:
         Dict with keys 'width', 'height', 'area_pct'.
     """
     if not pixels or x_count <= 0 or y_count <= 0:
-        ui.label("No pixel data for metrics").classes("text-subtitle2")
-        return {"width": 0, "height": 0, "area_pct": 0}
+        return {"width": 0, "height": 0, "area_pct": 0.0}
 
     peak = max(pixels) if pixels else 1.0
     threshold = peak * 0.1 if peak > 0 else 0
@@ -78,7 +80,31 @@ def eye_metrics_cards(
     # Eye area: fraction of pixels below threshold (open eye = low hit count)
     open_count = sum(1 for p in pixels if p <= threshold)
     total = len(pixels)
-    area_pct = (open_count / total * 100) if total > 0 else 0
+    area_pct = (open_count / total * 100) if total > 0 else 0.0
+
+    return {"width": width, "height": height, "area_pct": area_pct}
+
+
+def eye_metrics_cards(
+    pixels: list[float],
+    x_count: int,
+    y_count: int,
+) -> dict[str, float]:
+    """Compute and display eye opening metrics from pixel data.
+
+    Renders stat cards for eye width, height, and area.
+
+    Returns:
+        Dict with keys 'width', 'height', 'area_pct'.
+    """
+    if not pixels or x_count <= 0 or y_count <= 0:
+        ui.label("No pixel data for metrics").classes("text-subtitle2")
+        return {"width": 0, "height": 0, "area_pct": 0}
+
+    metrics = _compute_eye_metrics(pixels, x_count, y_count)
+    width = metrics["width"]
+    height = metrics["height"]
+    area_pct = metrics["area_pct"]
 
     with ui.row().classes("q-gutter-md q-mb-md flex-wrap"):
         for label, value, unit, color in [

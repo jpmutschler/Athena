@@ -15,16 +15,15 @@ _DIAMOND_COLORS = [
 ]
 
 
-def margin_diamond(results: list[CrossHairResult]) -> None:
-    """Render diamond-shaped margin polygons for cross-hair results.
+def _build_diamond_traces(results: list[CrossHairResult]) -> list[dict]:
+    """Build Plotly trace dicts for diamond-shaped margin polygons (pure data, no UI).
 
-    Each lane is drawn as a filled polygon:
-    (0, top) -> (right, 0) -> (0, bot) -> (left, 0) -> (0, top)
+    Args:
+        results: Cross-hair measurement results, one per lane.
+
+    Returns:
+        List of Plotly scatter trace dicts.
     """
-    if not results:
-        ui.label("No margin data").classes("text-subtitle1")
-        return
-
     traces = []
     for idx, r in enumerate(results):
         color = _DIAMOND_COLORS[idx % len(_DIAMOND_COLORS)]
@@ -52,6 +51,20 @@ def margin_diamond(results: list[CrossHairResult]) -> None:
                 "X: %{x}<br>Y: %{y}<extra></extra>"
             ),
         })
+    return traces
+
+
+def margin_diamond(results: list[CrossHairResult]) -> None:
+    """Render diamond-shaped margin polygons for cross-hair results.
+
+    Each lane is drawn as a filled polygon:
+    (0, top) -> (right, 0) -> (0, bot) -> (left, 0) -> (0, top)
+    """
+    if not results:
+        ui.label("No margin data").classes("text-subtitle1")
+        return
+
+    traces = _build_diamond_traces(results)
 
     fig = {
         "data": traces,
