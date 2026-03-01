@@ -48,6 +48,18 @@ GEN_COLORS = {
 }
 
 
+def gen_number(gen_str: str) -> int:
+    """Extract generation number from string like 'GEN4'."""
+    if gen_str and gen_str[-1].isdigit():
+        return int(gen_str[-1])
+    return 0
+
+
+def gen_color(gen_str: str) -> str:
+    """Return the color for a PCIe generation string."""
+    return GEN_COLORS.get(gen_number(gen_str), "#9e9e9e")
+
+
 def apply_dark_theme() -> str:
     """Return CSS for dark theme styling."""
     return f"""

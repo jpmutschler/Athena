@@ -5,12 +5,12 @@ from __future__ import annotations
 from nicegui import ui
 
 from serialcables_switchtec.models.device import DeviceSummary
-from serialcables_switchtec.ui.theme import COLORS, GEN_COLORS
+from serialcables_switchtec.ui.theme import COLORS, gen_color as _gen_color
 
 
 def device_card(summary: DeviceSummary) -> None:
     """Render a device summary card."""
-    gen_color = GEN_COLORS.get(int(summary.generation[-1]) if summary.generation[-1].isdigit() else 0, "#9e9e9e")
+    gen_color = _gen_color(summary.generation)
 
     with ui.card().classes("w-full q-pa-md"):
         with ui.row().classes("items-center q-mb-sm"):

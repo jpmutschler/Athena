@@ -9,7 +9,7 @@ from serialcables_switchtec.ui.layout import page_layout
 
 def eye_diagram_page() -> None:
     """Eye diagram capture controls and heatmap display."""
-    with page_layout("Eye Diagram"):
+    with page_layout("Eye Diagram", current_path="/eye"):
         ui.label("Eye Diagram Capture").classes("text-h5 q-mb-md")
 
         with ui.card().classes("w-full q-pa-md q-mb-md"):

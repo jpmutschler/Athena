@@ -9,7 +9,7 @@ from serialcables_switchtec.ui.layout import page_layout
 
 def performance_page() -> None:
     """Live bandwidth and latency charts."""
-    with page_layout("Performance"):
+    with page_layout("Performance", current_path="/performance"):
         ui.label("Performance Monitoring").classes("text-h5 q-mb-md")
 
         with ui.row().classes("w-full q-gutter-md"):

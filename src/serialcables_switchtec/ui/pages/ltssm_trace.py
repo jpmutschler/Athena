@@ -9,7 +9,7 @@ from serialcables_switchtec.ui.layout import page_layout
 
 def ltssm_trace_page() -> None:
     """LTSSM state machine timeline display."""
-    with page_layout("LTSSM Trace"):
+    with page_layout("LTSSM Trace", current_path="/ltssm"):
         ui.label("LTSSM State Trace").classes("text-h5 q-mb-md")
 
         with ui.card().classes("w-full q-pa-md q-mb-md"):
