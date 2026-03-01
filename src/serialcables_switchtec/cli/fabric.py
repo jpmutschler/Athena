@@ -219,6 +219,18 @@ def fabric_csr_read(
             click.echo(f"Error: addr must be 0x000-0xFFF, got 0x{addr_int:x}", err=True)
             raise click.Abort()
         width_int = int(width)
+        if width_int == 16 and (addr_int & 0x1):
+            click.echo(
+                f"Error: 16-bit CSR access requires even address, got 0x{addr_int:x}",
+                err=True,
+            )
+            raise click.Abort()
+        if width_int == 32 and (addr_int & 0x3):
+            click.echo(
+                f"Error: 32-bit CSR access requires 4-byte aligned address, got 0x{addr_int:x}",
+                err=True,
+            )
+            raise click.Abort()
         with SwitchtecDevice.open(device_path) as dev:
             value = dev.fabric.csr_read(pdfid, addr_int, width_int)
             if ctx.obj.get("json_output"):
@@ -266,11 +278,23 @@ def fabric_csr_write(
         if addr_int < 0 or addr_int > 0xFFF:
             click.echo(f"Error: addr must be 0x000-0xFFF, got 0x{addr_int:x}", err=True)
             raise click.Abort()
+        width_int = int(width)
+        if width_int == 16 and (addr_int & 0x1):
+            click.echo(
+                f"Error: 16-bit CSR access requires even address, got 0x{addr_int:x}",
+                err=True,
+            )
+            raise click.Abort()
+        if width_int == 32 and (addr_int & 0x3):
+            click.echo(
+                f"Error: 32-bit CSR access requires 4-byte aligned address, got 0x{addr_int:x}",
+                err=True,
+            )
+            raise click.Abort()
         try:
             value_int = int(value, 0)
         except ValueError:
             raise click.BadParameter(f"invalid value: {value!r}", param_hint="'--value'")
-        width_int = int(width)
         max_val = (1 << width_int) - 1
         if value_int < 0 or value_int > max_val:
             click.echo(

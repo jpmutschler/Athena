@@ -16,7 +16,7 @@ from serialcables_switchtec.bindings.types import (
     SwitchtecGfmsUnbindReq,
 )
 from serialcables_switchtec.core.fabric import FabricManager
-from serialcables_switchtec.exceptions import SwitchtecError
+from serialcables_switchtec.exceptions import InvalidParameterError, SwitchtecError
 from serialcables_switchtec.models.fabric import (
     FabPortConfig,
     GfmsBindRequest,
@@ -351,3 +351,322 @@ class TestDeviceFabricProperty:
         fab1 = device.fabric
         fab2 = device.fabric
         assert fab1 is fab2
+
+
+class TestCsrReadAlignmentValidation:
+    """PCIe config space reads must be naturally aligned per PCIe Base Spec."""
+
+    def test_8bit_read_any_address(self, device, mock_library):
+        fab = FabricManager(device)
+        for addr in (0x0, 0x1, 0x3, 0x7, 0xFF):
+            fab.csr_read(pdfid=0x100, addr=addr, width=8)
+
+    def test_16bit_read_even_address_succeeds(self, device, mock_library):
+        fab = FabricManager(device)
+        for addr in (0x0, 0x2, 0x4, 0xFE):
+            fab.csr_read(pdfid=0x100, addr=addr, width=16)
+
+    def test_16bit_read_odd_address_raises(self, device, mock_library):
+        fab = FabricManager(device)
+        for addr in (0x1, 0x3, 0x5, 0xFF):
+            with pytest.raises(InvalidParameterError, match="16-bit CSR access requires even address"):
+                fab.csr_read(pdfid=0x100, addr=addr, width=16)
+
+    def test_32bit_read_aligned_address_succeeds(self, device, mock_library):
+        fab = FabricManager(device)
+        for addr in (0x0, 0x4, 0x8, 0xFC):
+            fab.csr_read(pdfid=0x100, addr=addr, width=32)
+
+    def test_32bit_read_unaligned_address_raises(self, device, mock_library):
+        fab = FabricManager(device)
+        for addr in (0x1, 0x2, 0x3, 0x5, 0x6, 0x7):
+            with pytest.raises(InvalidParameterError, match="32-bit CSR access requires 4-byte aligned"):
+                fab.csr_read(pdfid=0x100, addr=addr, width=32)
+
+
+class TestCsrWriteAlignmentValidation:
+    """PCIe config space writes must be naturally aligned per PCIe Base Spec."""
+
+    def test_8bit_write_any_address(self, device, mock_library):
+        fab = FabricManager(device)
+        for addr in (0x0, 0x1, 0x3, 0x7, 0xFF):
+            fab.csr_write(pdfid=0x100, addr=addr, value=0x12, width=8)
+
+    def test_16bit_write_even_address_succeeds(self, device, mock_library):
+        fab = FabricManager(device)
+        for addr in (0x0, 0x2, 0x4, 0xFE):
+            fab.csr_write(pdfid=0x100, addr=addr, value=0x1234, width=16)
+
+    def test_16bit_write_odd_address_raises(self, device, mock_library):
+        fab = FabricManager(device)
+        for addr in (0x1, 0x3, 0x5, 0xFF):
+            with pytest.raises(InvalidParameterError, match="16-bit CSR access requires even address"):
+                fab.csr_write(pdfid=0x100, addr=addr, value=0x1234, width=16)
+
+    def test_32bit_write_aligned_address_succeeds(self, device, mock_library):
+        fab = FabricManager(device)
+        for addr in (0x0, 0x4, 0x8, 0xFC):
+            fab.csr_write(pdfid=0x100, addr=addr, value=0x12345678, width=32)
+
+    def test_32bit_write_unaligned_address_raises(self, device, mock_library):
+        fab = FabricManager(device)
+        for addr in (0x1, 0x2, 0x3, 0x5, 0x6, 0x7):
+            with pytest.raises(InvalidParameterError, match="32-bit CSR access requires 4-byte aligned"):
+                fab.csr_write(pdfid=0x100, addr=addr, value=0x12345678, width=32)
+
+
+# ─── CSR Read Tests ──────────────────────────────────────────────────
+
+
+def _make_csr_read_side_effect(value, ctype_class):
+    """Build a side_effect that populates the byref output parameter."""
+
+    def side_effect(handle, pdfid, addr, val_ref):
+        ptr = ctypes.cast(val_ref, ctypes.POINTER(ctype_class))
+        ptr[0] = value
+        return 0
+
+    return side_effect
+
+
+class TestCsrRead:
+    def test_csr_read8_happy_path(self, device, mock_library):
+        mock_library.switchtec_ep_csr_read8.side_effect = (
+            _make_csr_read_side_effect(0xAB, ctypes.c_uint8)
+        )
+        fab = FabricManager(device)
+        result = fab.csr_read(pdfid=0x100, addr=0x10, width=8)
+        mock_library.switchtec_ep_csr_read8.assert_called_once()
+        call_args = mock_library.switchtec_ep_csr_read8.call_args[0]
+        assert call_args[0] == 0xDEADBEEF
+        assert call_args[1] == 0x100
+        assert call_args[2] == 0x10
+        assert result == 0xAB
+
+    def test_csr_read16_happy_path(self, device, mock_library):
+        mock_library.switchtec_ep_csr_read16.side_effect = (
+            _make_csr_read_side_effect(0xBEEF, ctypes.c_uint16)
+        )
+        fab = FabricManager(device)
+        result = fab.csr_read(pdfid=0x100, addr=0x10, width=16)
+        mock_library.switchtec_ep_csr_read16.assert_called_once()
+        call_args = mock_library.switchtec_ep_csr_read16.call_args[0]
+        assert call_args[0] == 0xDEADBEEF
+        assert call_args[1] == 0x100
+        assert call_args[2] == 0x10
+        assert result == 0xBEEF
+
+    def test_csr_read32_happy_path(self, device, mock_library):
+        mock_library.switchtec_ep_csr_read32.side_effect = (
+            _make_csr_read_side_effect(0xDEADBEEF, ctypes.c_uint32)
+        )
+        fab = FabricManager(device)
+        result = fab.csr_read(pdfid=0x100, addr=0x10, width=32)
+        mock_library.switchtec_ep_csr_read32.assert_called_once()
+        call_args = mock_library.switchtec_ep_csr_read32.call_args[0]
+        assert call_args[0] == 0xDEADBEEF
+        assert call_args[1] == 0x100
+        assert call_args[2] == 0x10
+        assert result == 0xDEADBEEF
+
+    def test_csr_read_boundary_pdfid_zero(self, device, mock_library):
+        mock_library.switchtec_ep_csr_read32.side_effect = (
+            _make_csr_read_side_effect(0x42, ctypes.c_uint32)
+        )
+        fab = FabricManager(device)
+        result = fab.csr_read(pdfid=0, addr=0x0, width=32)
+        call_args = mock_library.switchtec_ep_csr_read32.call_args[0]
+        assert call_args[1] == 0
+        assert result == 0x42
+
+    def test_csr_read_boundary_pdfid_max(self, device, mock_library):
+        mock_library.switchtec_ep_csr_read32.side_effect = (
+            _make_csr_read_side_effect(0x42, ctypes.c_uint32)
+        )
+        fab = FabricManager(device)
+        result = fab.csr_read(pdfid=0xFFFF, addr=0x0, width=32)
+        call_args = mock_library.switchtec_ep_csr_read32.call_args[0]
+        assert call_args[1] == 0xFFFF
+        assert result == 0x42
+
+    def test_csr_read_boundary_addr_zero(self, device, mock_library):
+        mock_library.switchtec_ep_csr_read32.side_effect = (
+            _make_csr_read_side_effect(0x1, ctypes.c_uint32)
+        )
+        fab = FabricManager(device)
+        result = fab.csr_read(pdfid=0x100, addr=0, width=32)
+        call_args = mock_library.switchtec_ep_csr_read32.call_args[0]
+        assert call_args[2] == 0
+        assert result == 0x1
+
+    def test_csr_read_boundary_addr_max_aligned(self, device, mock_library):
+        mock_library.switchtec_ep_csr_read32.side_effect = (
+            _make_csr_read_side_effect(0x1, ctypes.c_uint32)
+        )
+        fab = FabricManager(device)
+        # 0xFFC is the max 4-byte-aligned address in the 0x000-0xFFF range
+        result = fab.csr_read(pdfid=0x100, addr=0xFFC, width=32)
+        call_args = mock_library.switchtec_ep_csr_read32.call_args[0]
+        assert call_args[2] == 0xFFC
+        assert result == 0x1
+
+    def test_csr_read_boundary_addr_max_byte(self, device, mock_library):
+        mock_library.switchtec_ep_csr_read8.side_effect = (
+            _make_csr_read_side_effect(0xFF, ctypes.c_uint8)
+        )
+        fab = FabricManager(device)
+        result = fab.csr_read(pdfid=0x100, addr=0xFFF, width=8)
+        assert result == 0xFF
+
+    def test_csr_read_invalid_pdfid_negative(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="pdfid"):
+            fab.csr_read(pdfid=-1, addr=0x10, width=32)
+
+    def test_csr_read_invalid_pdfid_too_large(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="pdfid"):
+            fab.csr_read(pdfid=0x10000, addr=0x10, width=32)
+
+    def test_csr_read_invalid_addr_negative(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="addr"):
+            fab.csr_read(pdfid=0x100, addr=-1, width=32)
+
+    def test_csr_read_invalid_addr_too_large(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="addr"):
+            fab.csr_read(pdfid=0x100, addr=0x1000, width=32)
+
+    def test_csr_read_invalid_width(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(SwitchtecError, match="Invalid CSR width"):
+            fab.csr_read(pdfid=0x100, addr=0x10, width=64)
+
+    def test_csr_read16_unaligned(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="even address"):
+            fab.csr_read(pdfid=0x100, addr=0x11, width=16)
+
+    def test_csr_read32_unaligned(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="4-byte aligned"):
+            fab.csr_read(pdfid=0x100, addr=0x11, width=32)
+
+    def test_csr_read_error_return(self, device, mock_library, monkeypatch):
+        mock_library.switchtec_ep_csr_read32.return_value = -1
+        monkeypatch.setattr(ctypes, "get_errno", lambda: 0)
+        fab = FabricManager(device)
+        with pytest.raises(SwitchtecError):
+            fab.csr_read(pdfid=0x100, addr=0x10, width=32)
+
+
+# ─── CSR Write Tests ─────────────────────────────────────────────────
+
+
+class TestCsrWrite:
+    def test_csr_write8_happy_path(self, device, mock_library):
+        fab = FabricManager(device)
+        fab.csr_write(pdfid=0x100, addr=0x10, value=0xAB, width=8)
+        mock_library.switchtec_ep_csr_write8.assert_called_once_with(
+            0xDEADBEEF, 0x100, 0xAB, 0x10,
+        )
+
+    def test_csr_write16_happy_path(self, device, mock_library):
+        fab = FabricManager(device)
+        fab.csr_write(pdfid=0x100, addr=0x10, value=0xBEEF, width=16)
+        mock_library.switchtec_ep_csr_write16.assert_called_once_with(
+            0xDEADBEEF, 0x100, 0xBEEF, 0x10,
+        )
+
+    def test_csr_write32_happy_path(self, device, mock_library):
+        fab = FabricManager(device)
+        fab.csr_write(pdfid=0x100, addr=0x10, value=0xCAFEBABE, width=32)
+        mock_library.switchtec_ep_csr_write32.assert_called_once_with(
+            0xDEADBEEF, 0x100, 0xCAFEBABE, 0x10,
+        )
+
+    def test_csr_write8_boundary_max_value(self, device, mock_library):
+        fab = FabricManager(device)
+        fab.csr_write(pdfid=0x100, addr=0x10, value=0xFF, width=8)
+        mock_library.switchtec_ep_csr_write8.assert_called_once_with(
+            0xDEADBEEF, 0x100, 0xFF, 0x10,
+        )
+
+    def test_csr_write16_boundary_max_value(self, device, mock_library):
+        fab = FabricManager(device)
+        fab.csr_write(pdfid=0x100, addr=0x10, value=0xFFFF, width=16)
+        mock_library.switchtec_ep_csr_write16.assert_called_once_with(
+            0xDEADBEEF, 0x100, 0xFFFF, 0x10,
+        )
+
+    def test_csr_write32_boundary_max_value(self, device, mock_library):
+        fab = FabricManager(device)
+        fab.csr_write(pdfid=0x100, addr=0x10, value=0xFFFFFFFF, width=32)
+        mock_library.switchtec_ep_csr_write32.assert_called_once_with(
+            0xDEADBEEF, 0x100, 0xFFFFFFFF, 0x10,
+        )
+
+    def test_csr_write_zero_value(self, device, mock_library):
+        fab = FabricManager(device)
+        fab.csr_write(pdfid=0x100, addr=0x10, value=0, width=8)
+        mock_library.switchtec_ep_csr_write8.assert_called_once_with(
+            0xDEADBEEF, 0x100, 0, 0x10,
+        )
+
+    def test_csr_write8_value_overflow(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="exceeds"):
+            fab.csr_write(pdfid=0x100, addr=0x10, value=0x100, width=8)
+
+    def test_csr_write16_value_overflow(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="exceeds"):
+            fab.csr_write(pdfid=0x100, addr=0x10, value=0x10000, width=16)
+
+    def test_csr_write32_value_overflow(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="exceeds"):
+            fab.csr_write(pdfid=0x100, addr=0x10, value=0x100000000, width=32)
+
+    def test_csr_write_invalid_pdfid_negative(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="pdfid"):
+            fab.csr_write(pdfid=-1, addr=0x10, value=0, width=32)
+
+    def test_csr_write_invalid_pdfid_too_large(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="pdfid"):
+            fab.csr_write(pdfid=0x10000, addr=0x10, value=0, width=32)
+
+    def test_csr_write_invalid_addr_negative(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="addr"):
+            fab.csr_write(pdfid=0x100, addr=-1, value=0, width=32)
+
+    def test_csr_write_invalid_addr_too_large(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="addr"):
+            fab.csr_write(pdfid=0x100, addr=0x1000, value=0, width=32)
+
+    def test_csr_write_invalid_width(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises((SwitchtecError, InvalidParameterError)):
+            fab.csr_write(pdfid=0x100, addr=0x10, value=0, width=64)
+
+    def test_csr_write16_unaligned(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="even address"):
+            fab.csr_write(pdfid=0x100, addr=0x11, value=0, width=16)
+
+    def test_csr_write32_unaligned(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="4-byte aligned"):
+            fab.csr_write(pdfid=0x100, addr=0x03, value=0, width=32)
+
+    def test_csr_write_error_return(self, device, mock_library, monkeypatch):
+        mock_library.switchtec_ep_csr_write32.return_value = -1
+        monkeypatch.setattr(ctypes, "get_errno", lambda: 0)
+        fab = FabricManager(device)
+        with pytest.raises(SwitchtecError):
+            fab.csr_write(pdfid=0x100, addr=0x10, value=0x1, width=32)

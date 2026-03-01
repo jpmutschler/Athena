@@ -182,6 +182,14 @@ class FabricManager:
             raise InvalidParameterError(f"pdfid must be 0-0xFFFF, got {pdfid}")
         if not (0 <= addr <= 0xFFF):
             raise InvalidParameterError(f"addr must be 0x000-0xFFF, got 0x{addr:x}")
+        if width == 16 and (addr & 0x1):
+            raise InvalidParameterError(
+                f"16-bit CSR access requires even address, got 0x{addr:x}"
+            )
+        if width == 32 and (addr & 0x3):
+            raise InvalidParameterError(
+                f"32-bit CSR access requires 4-byte aligned address, got 0x{addr:x}"
+            )
         if width == 8:
             val = ctypes.c_uint8()
             with self._dev.device_op():
@@ -230,6 +238,14 @@ class FabricManager:
             raise InvalidParameterError(f"pdfid must be 0-0xFFFF, got {pdfid}")
         if not (0 <= addr <= 0xFFF):
             raise InvalidParameterError(f"addr must be 0x000-0xFFF, got 0x{addr:x}")
+        if width == 16 and (addr & 0x1):
+            raise InvalidParameterError(
+                f"16-bit CSR access requires even address, got 0x{addr:x}"
+            )
+        if width == 32 and (addr & 0x3):
+            raise InvalidParameterError(
+                f"32-bit CSR access requires 4-byte aligned address, got 0x{addr:x}"
+            )
         max_val = (1 << width) - 1 if width in (8, 16, 32) else 0
         if not (0 <= value <= max_val):
             raise InvalidParameterError(f"value 0x{value:x} exceeds {width}-bit max 0x{max_val:x}")

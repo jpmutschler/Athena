@@ -158,11 +158,19 @@ class CsrWriteRequest(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def validate_value_fits_width(self) -> "CsrWriteRequest":
+    def validate_value_and_alignment(self) -> "CsrWriteRequest":
         max_val = (1 << self.width) - 1
         if self.value > max_val:
             raise ValueError(
                 f"value 0x{self.value:x} exceeds {self.width}-bit maximum 0x{max_val:x}"
+            )
+        if self.width == 16 and (self.addr & 0x1):
+            raise ValueError(
+                f"16-bit CSR access requires even address, got 0x{self.addr:x}"
+            )
+        if self.width == 32 and (self.addr & 0x3):
+            raise ValueError(
+                f"32-bit CSR access requires 4-byte aligned address, got 0x{self.addr:x}"
             )
         return self
 
@@ -179,6 +187,20 @@ def csr_read(
         from fastapi import HTTPException
 
         raise HTTPException(status_code=422, detail="width must be 8, 16, or 32")
+    if width == 16 and (addr & 0x1):
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=422,
+            detail=f"16-bit CSR access requires even address, got 0x{addr:x}",
+        )
+    if width == 32 and (addr & 0x3):
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=422,
+            detail=f"32-bit CSR access requires 4-byte aligned address, got 0x{addr:x}",
+        )
     dev = get_device(device_id)
     try:
         mgr = dev.fabric

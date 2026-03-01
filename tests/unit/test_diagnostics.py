@@ -630,3 +630,40 @@ class TestDiagnosticsManagerCrossHair:
         diag = DiagnosticsManager(device)
         with pytest.raises(SwitchtecError):
             diag.cross_hair_get()
+
+
+# ─── AER Event Generation Tests ─────────────────────────────────────
+
+
+class TestAerEventGen:
+    def test_aer_event_gen_happy_path(self, device, mock_library):
+        diag = DiagnosticsManager(device)
+        diag.aer_event_gen(port_id=3, error_id=0x10, trigger=1)
+        mock_library.switchtec_aer_event_gen.assert_called_once_with(
+            0xDEADBEEF, 3, 0x10, 1,
+        )
+
+    def test_aer_event_gen_verifies_all_args(self, device, mock_library):
+        diag = DiagnosticsManager(device)
+        diag.aer_event_gen(port_id=7, error_id=0xFF, trigger=2)
+        call_args = mock_library.switchtec_aer_event_gen.call_args[0]
+        assert call_args[0] == 0xDEADBEEF
+        assert call_args[1] == 7
+        assert call_args[2] == 0xFF
+        assert call_args[3] == 2
+
+    def test_aer_event_gen_default_trigger(self, device, mock_library):
+        diag = DiagnosticsManager(device)
+        diag.aer_event_gen(port_id=1, error_id=0x05)
+        mock_library.switchtec_aer_event_gen.assert_called_once_with(
+            0xDEADBEEF, 1, 0x05, 0,
+        )
+
+    def test_aer_event_gen_error_return(
+        self, device, mock_library, monkeypatch
+    ):
+        mock_library.switchtec_aer_event_gen.return_value = -1
+        monkeypatch.setattr(ctypes, "get_errno", lambda: 0)
+        diag = DiagnosticsManager(device)
+        with pytest.raises(SwitchtecError):
+            diag.aer_event_gen(port_id=0, error_id=0x01)

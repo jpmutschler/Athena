@@ -94,6 +94,7 @@ class FakeLibrary:
         self.switchtec_fw_is_boot_ro = MagicMock(return_value=0)
         self.switchtec_fw_set_boot_ro = MagicMock(return_value=0)
         self.switchtec_fw_image_type = MagicMock(return_value=b"IMG")
+        self.switchtec_fw_write_fd = MagicMock(return_value=0)
 
         # BW/Lat functions
         self.switchtec_bwcntr_many = MagicMock(return_value=0)
@@ -155,6 +156,7 @@ class FakeLibrary:
         self.switchtec_ep_csr_write32 = MagicMock(return_value=0)
 
         # Event counter functions
+        self.switchtec_evcntr_type_count = MagicMock(return_value=0)
         self.switchtec_evcntr_setup = MagicMock(return_value=0)
         self.switchtec_evcntr_get_setup = MagicMock(return_value=0)
         self.switchtec_evcntr_get = MagicMock(return_value=0)
