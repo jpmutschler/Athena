@@ -16,6 +16,7 @@ from serialcables_switchtec.core.workflows.models import (
     StepCriticality,
     StepStatus,
 )
+from serialcables_switchtec.core.ltssm_analyzer import LtssmPathAnalyzer
 from serialcables_switchtec.exceptions import SwitchtecError
 
 _DEFAULT_DURATION = 30
@@ -186,9 +187,19 @@ class LtssmMonitor(Recipe):
                 aborted=cancel.is_set(),
             )
 
+        # Run structured LTSSM analysis
+        analyzer = LtssmPathAnalyzer()
+        analysis = analyzer.analyze(final_entries)
+
         if total_transitions == 0:
             status = StepStatus.PASS
             detail = "No LTSSM transitions detected — link is stable"
+        elif analysis.verdict == "FAIL":
+            status = StepStatus.FAIL
+            detail = f"{total_transitions} transitions — {analysis.summary}"
+        elif analysis.verdict == "WARN":
+            status = StepStatus.WARN
+            detail = f"{total_transitions} transitions — {analysis.summary}"
         else:
             status = StepStatus.WARN
             detail = f"{total_transitions} LTSSM transitions detected — link may be unstable"
@@ -201,6 +212,11 @@ class LtssmMonitor(Recipe):
             detail=detail,
             data={
                 "total_transitions": total_transitions,
+                "ltssm_verdict": analysis.verdict,
+                "ltssm_patterns": [
+                    {"name": p.name, "severity": p.severity, "description": p.description}
+                    for p in analysis.patterns
+                ],
                 "entries": [
                     {
                         "state": e.link_state_str,

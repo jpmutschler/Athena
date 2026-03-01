@@ -16,6 +16,7 @@ from serialcables_switchtec.core.workflows.models import (
     StepCriticality,
     StepStatus,
 )
+from serialcables_switchtec.core.ltssm_analyzer import LtssmPathAnalyzer
 from serialcables_switchtec.exceptions import SwitchtecError
 
 
@@ -214,13 +215,24 @@ class LinkTrainingDebug(Recipe):
                 aborted=True,
             )
 
+        # Run LTSSM path analysis
+        analyzer = LtssmPathAnalyzer()
+        analysis = analyzer.analyze(ltssm_entries)
+
         link_up = target_port.link_up
         if link_up:
             detail = "Link is UP — no training issue detected"
             status = StepStatus.PASS
         elif transition_count > 0:
-            detail = f"Link is DOWN with {transition_count} transitions — likely training failure"
-            status = StepStatus.WARN
+            if analysis.verdict == "FAIL":
+                detail = (
+                    f"Link is DOWN with {transition_count} transitions — "
+                    f"{analysis.summary}"
+                )
+                status = StepStatus.FAIL
+            else:
+                detail = f"Link is DOWN with {transition_count} transitions — likely training failure"
+                status = StepStatus.WARN
         else:
             detail = "Link is DOWN with no transitions — port may be unused or disconnected"
             status = StepStatus.PASS
@@ -234,6 +246,11 @@ class LinkTrainingDebug(Recipe):
             data={
                 "link_up": link_up,
                 "transition_count": transition_count,
+                "ltssm_verdict": analysis.verdict,
+                "ltssm_patterns": [
+                    {"name": p.name, "severity": p.severity, "description": p.description}
+                    for p in analysis.patterns
+                ],
             },
         )
         results.append(r)

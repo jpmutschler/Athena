@@ -16,7 +16,9 @@ from serialcables_switchtec.core.workflows.models import (
     StepCriticality,
     StepStatus,
 )
+from serialcables_switchtec.bindings.constants import SwitchtecGen
 from serialcables_switchtec.exceptions import SwitchtecError
+from serialcables_switchtec.models.eq_validation import validate_eq_cursor
 
 
 class EqReport(Recipe):
@@ -45,6 +47,14 @@ class EqReport(Recipe):
                 min_val=1,
                 max_val=16,
             ),
+            RecipeParameter(
+                name="generation",
+                display_name="PCIe Generation",
+                param_type="select",
+                choices=["GEN3", "GEN4", "GEN5", "GEN6"],
+                default=None,
+                required=False,
+            ),
         ]
 
     def estimated_duration_s(self, **kwargs: object) -> float:
@@ -61,6 +71,18 @@ class EqReport(Recipe):
         total_steps = 3
         port_id = int(kwargs.get("port_id", 0))
         num_lanes = int(kwargs.get("num_lanes", 4))
+
+        # Resolve generation for EQ validation
+        gen_str = kwargs.get("generation")
+        gen: SwitchtecGen | None = None
+        if gen_str is not None:
+            gen_map = {
+                "GEN3": SwitchtecGen.GEN3,
+                "GEN4": SwitchtecGen.GEN4,
+                "GEN5": SwitchtecGen.GEN5,
+                "GEN6": SwitchtecGen.GEN6,
+            }
+            gen = gen_map.get(str(gen_str))
 
         # Step 1: Read TX coefficients
         yield self._make_result(
@@ -81,13 +103,33 @@ class EqReport(Recipe):
             cursor_data = [
                 {"lane": i, "pre": c.pre, "post": c.post} for i, c in enumerate(coeff.cursors)
             ]
+            # Validate cursors if generation is known
+            eq_warnings: list[str] = []
+            if gen is not None:
+                for i, c in enumerate(coeff.cursors):
+                    pre_result = validate_eq_cursor(i, "pre", c.pre, gen)
+                    post_result = validate_eq_cursor(i, "post", c.post, gen)
+                    if not pre_result.valid:
+                        eq_warnings.append(pre_result.message)
+                    if not post_result.valid:
+                        eq_warnings.append(post_result.message)
+
+            coeff_status = StepStatus.PASS
+            coeff_detail = f"Read coefficients for {coeff.lane_count} lane(s) on port {port_id}"
+            if eq_warnings:
+                coeff_status = StepStatus.WARN
+                coeff_detail += f" ({len(eq_warnings)} EQ warning(s))"
             r = self._make_result(
                 "Read TX coefficients",
                 0,
                 total_steps,
-                StepStatus.PASS,
-                detail=(f"Read coefficients for {coeff.lane_count} lane(s) on port {port_id}"),
-                data={"lane_count": coeff.lane_count, "cursors": cursor_data},
+                coeff_status,
+                detail=coeff_detail,
+                data={
+                    "lane_count": coeff.lane_count,
+                    "cursors": cursor_data,
+                    "eq_warnings": eq_warnings,
+                },
             )
         except SwitchtecError as exc:
             r = self._make_result(

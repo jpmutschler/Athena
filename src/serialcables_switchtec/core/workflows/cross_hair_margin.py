@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Generator
 
+from serialcables_switchtec.bindings.constants import SwitchtecGen
 from serialcables_switchtec.core.device import SwitchtecDevice
 from serialcables_switchtec.core.workflows.base import Recipe
 from serialcables_switchtec.core.workflows.models import (
@@ -20,8 +21,18 @@ from serialcables_switchtec.exceptions import SwitchtecError
 
 _POLL_INTERVAL = 0.5
 _TIMEOUT_PER_LANE = 15.0
+
+# Legacy defaults (used when no generation is specified)
 _H_MARGIN_WARN = 20
 _V_MARGIN_WARN = 30
+
+# Generation-aware thresholds: PAM4 (Gen6) has ~1/3 the margin of NRZ
+_MARGIN_THRESHOLDS: dict[SwitchtecGen, dict[str, int]] = {
+    SwitchtecGen.GEN3: {"h_warn": 30, "v_warn": 40},
+    SwitchtecGen.GEN4: {"h_warn": 25, "v_warn": 35},
+    SwitchtecGen.GEN5: {"h_warn": 20, "v_warn": 30},
+    SwitchtecGen.GEN6: {"h_warn": 7, "v_warn": 10},
+}
 
 
 class CrossHairMargin(Recipe):
@@ -51,6 +62,26 @@ class CrossHairMargin(Recipe):
                 min_val=1,
                 max_val=16,
             ),
+            RecipeParameter(
+                name="h_margin_warn",
+                display_name="H-Margin Warning Threshold",
+                param_type="int",
+                required=False,
+                default=None,
+                min_val=0,
+                max_val=200,
+                depends_on="generation",
+            ),
+            RecipeParameter(
+                name="v_margin_warn",
+                display_name="V-Margin Warning Threshold",
+                param_type="int",
+                required=False,
+                default=None,
+                min_val=0,
+                max_val=200,
+                depends_on="generation",
+            ),
         ]
 
     def estimated_duration_s(self, **kwargs: object) -> float:
@@ -74,6 +105,27 @@ class CrossHairMargin(Recipe):
         total_steps = 3
         start_lane_id = int(kwargs.get("start_lane_id", 0))
         num_lanes = int(kwargs.get("num_lanes", 1))
+
+        # Resolve generation-aware margin thresholds
+        gen_val = kwargs.get("generation")
+        if gen_val is not None:
+            gen = SwitchtecGen(int(gen_val))
+            gen_thresholds = _MARGIN_THRESHOLDS.get(gen, {})
+        else:
+            gen_thresholds = {}
+
+        h_warn_raw = kwargs.get("h_margin_warn")
+        v_warn_raw = kwargs.get("v_margin_warn")
+        h_margin_warn = (
+            int(h_warn_raw)
+            if h_warn_raw is not None
+            else gen_thresholds.get("h_warn", _H_MARGIN_WARN)
+        )
+        v_margin_warn = (
+            int(v_warn_raw)
+            if v_warn_raw is not None
+            else gen_thresholds.get("v_warn", _V_MARGIN_WARN)
+        )
 
         # Step 1: Enable measurement
         yield self._make_result(
@@ -213,10 +265,10 @@ class CrossHairMargin(Recipe):
                 }
             )
 
-            if h_margin < _H_MARGIN_WARN:
-                warnings.append(f"Lane {ch.lane_id} h_margin={h_margin} < {_H_MARGIN_WARN}")
-            if v_margin < _V_MARGIN_WARN:
-                warnings.append(f"Lane {ch.lane_id} v_margin={v_margin} < {_V_MARGIN_WARN}")
+            if h_margin < h_margin_warn:
+                warnings.append(f"Lane {ch.lane_id} h_margin={h_margin} < {h_margin_warn}")
+            if v_margin < v_margin_warn:
+                warnings.append(f"Lane {ch.lane_id} v_margin={v_margin} < {v_margin_warn}")
 
         if warnings:
             status = StepStatus.WARN

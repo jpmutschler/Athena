@@ -16,6 +16,8 @@ from serialcables_switchtec.core.workflows.models import (
     StepCriticality,
     StepStatus,
 )
+from serialcables_switchtec.bindings.constants import SwitchtecGen
+from serialcables_switchtec.core.eye_metrics import analyze_eye, compute_eye_metrics
 from serialcables_switchtec.exceptions import SwitchtecError
 
 _FETCH_TIMEOUT = 60.0
@@ -57,6 +59,14 @@ class EyeQuickScan(Recipe):
                 min_val=1,
                 max_val=100,
             ),
+            RecipeParameter(
+                name="generation",
+                display_name="PCIe Generation",
+                param_type="select",
+                choices=["GEN3", "GEN4", "GEN5", "GEN6"],
+                default=None,
+                required=False,
+            ),
         ]
 
     def estimated_duration_s(self, **kwargs: object) -> float:
@@ -79,6 +89,18 @@ class EyeQuickScan(Recipe):
         total_steps = 4
         lane_id = int(kwargs.get("lane_id", 0))
         step_interval = int(kwargs.get("step_interval", 10))
+
+        # Resolve generation for PAM4-aware analysis
+        gen_str = kwargs.get("generation")
+        gen: SwitchtecGen | None = None
+        if gen_str is not None:
+            gen_map = {
+                "GEN3": SwitchtecGen.GEN3,
+                "GEN4": SwitchtecGen.GEN4,
+                "GEN5": SwitchtecGen.GEN5,
+                "GEN6": SwitchtecGen.GEN6,
+            }
+            gen = gen_map.get(str(gen_str))
 
         # Step 1: Start eye capture
         yield self._make_result(
@@ -195,11 +217,21 @@ class EyeQuickScan(Recipe):
                 aborted=True,
             )
 
-        width, height, area = _compute_eye_metrics(
-            eye_data.pixels,
-            _X_COUNT,
-            _Y_COUNT,
-        )
+        metrics = compute_eye_metrics(eye_data.pixels, _X_COUNT, _Y_COUNT)
+        width, height, area = metrics.width, metrics.height, metrics.area_fraction
+
+        # Run generation-aware analysis if generation is specified
+        eye_analysis_data: dict[str, object] = {
+            "width": width,
+            "height": height,
+            "area": area,
+        }
+        if gen is not None:
+            eye_result = analyze_eye(eye_data.pixels, _X_COUNT, _Y_COUNT, gen)
+            eye_analysis_data["signaling"] = eye_result.signaling
+            eye_analysis_data["eye_count"] = len(eye_result.eyes)
+            eye_analysis_data["overall_area"] = eye_result.overall_area
+            eye_analysis_data["gen_verdict"] = eye_result.verdict
 
         r = self._make_result(
             "Compute metrics",
@@ -207,7 +239,7 @@ class EyeQuickScan(Recipe):
             total_steps,
             StepStatus.PASS,
             detail=(f"Eye width={width}, height={height}, area={area:.1%}"),
-            data={"width": width, "height": height, "area": area},
+            data=eye_analysis_data,
         )
         results.append(r)
         yield r
@@ -250,55 +282,3 @@ class EyeQuickScan(Recipe):
             time.monotonic() - start,
             aborted=cancel.is_set(),
         )
-
-
-def _compute_eye_metrics(
-    pixels: list[float],
-    x_count: int,
-    y_count: int,
-) -> tuple[int, int, float]:
-    """Compute eye width, height, and open area fraction.
-
-    The pixel grid is stored row-major: pixels[y * x_count + x].
-    Threshold is 10% of the max pixel value.
-
-    Returns:
-        Tuple of (width, height, area_fraction).
-    """
-    if not pixels:
-        return 0, 0, 0.0
-
-    max_val = max(pixels)
-    if max_val <= 0:
-        return 0, 0, 0.0  # All-zero capture: no signal detected
-
-    threshold = max_val * 0.1
-
-    # Eye width: contiguous open columns in center row
-    center_y = y_count // 2
-    center_row_start = center_y * x_count
-    width = 0
-    best_width = 0
-    for x in range(x_count):
-        if pixels[center_row_start + x] < threshold:
-            width += 1
-            best_width = max(best_width, width)
-        else:
-            width = 0
-
-    # Eye height: contiguous open rows in center column
-    center_x = x_count // 2
-    height = 0
-    best_height = 0
-    for y in range(y_count):
-        if pixels[y * x_count + center_x] < threshold:
-            height += 1
-            best_height = max(best_height, height)
-        else:
-            height = 0
-
-    # Area: fraction of pixels below threshold
-    open_count = sum(1 for p in pixels if p < threshold)
-    area = open_count / len(pixels) if pixels else 0.0
-
-    return best_width, best_height, area

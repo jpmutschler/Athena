@@ -73,6 +73,7 @@ from serialcables_switchtec.cli.firmware import fw_group  # noqa: E402
 from serialcables_switchtec.cli.mrpc import mrpc_group  # noqa: E402
 from serialcables_switchtec.cli.osa import osa_group  # noqa: E402
 from serialcables_switchtec.cli.perf import perf_group  # noqa: E402
+from serialcables_switchtec.cli.recipe import recipe  # noqa: E402
 
 cli.add_command(device)
 cli.add_command(diag)
@@ -83,6 +84,7 @@ cli.add_command(fw_group)
 cli.add_command(mrpc_group)
 cli.add_command(osa_group)
 cli.add_command(perf_group)
+cli.add_command(recipe)
 
 
 if __name__ == "__main__":

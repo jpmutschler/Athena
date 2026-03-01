@@ -17,6 +17,7 @@ from serialcables_switchtec.core.workflows.models import (
     StepStatus,
 )
 from serialcables_switchtec.exceptions import SwitchtecError
+from serialcables_switchtec.models.osa import interpret_osa_result
 
 _DEFAULT_DURATION = 10
 
@@ -181,14 +182,19 @@ class OsaCapture(Recipe):
             result_code = dev.osa.capture_data(
                 stack_id, lane=first_lane, direction=0,
             )
+            capture_result = interpret_osa_result(result_code)
+            status = StepStatus.PASS if capture_result.success else StepStatus.WARN
             r = self._make_result(
-                "Stop and read", 3, total_steps, StepStatus.PASS,
+                "Stop and read", 3, total_steps, status,
                 detail=(
-                    f"Capture complete, result_code={result_code}"
+                    f"Capture complete: {capture_result.message} "
+                    f"(status={capture_result.status_name})"
                 ),
                 data={
                     "stack_id": stack_id,
                     "result_code": result_code,
+                    "osa_status": capture_result.status_name,
+                    "osa_success": capture_result.success,
                     "duration_s": actual_wait,
                 },
             )

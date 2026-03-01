@@ -16,6 +16,7 @@ from serialcables_switchtec.core.workflows.models import (
     StepCriticality,
     StepStatus,
 )
+from serialcables_switchtec.core.evcntr_presets import PRESETS
 from serialcables_switchtec.exceptions import SwitchtecError
 
 _DEFAULT_DURATION = 30
@@ -52,6 +53,13 @@ class EventCounterBaseline(Recipe):
                 min_val=0, max_val=0xFFFFFFFF,
             ),
             RecipeParameter(
+                name="counter_preset", display_name="Counter Preset",
+                param_type="select",
+                choices=sorted(PRESETS.keys()),
+                default=None,
+                required=False,
+            ),
+            RecipeParameter(
                 name="duration_s", display_name="Duration (s)",
                 param_type="int", default=_DEFAULT_DURATION,
                 min_val=5, max_val=300,
@@ -76,6 +84,12 @@ class EventCounterBaseline(Recipe):
         port_mask = int(kwargs.get("port_mask", 0xFFFFFFFF))
         type_mask = int(kwargs.get("type_mask", 0xFFFFFFFF))
         duration_s = int(kwargs.get("duration_s", _DEFAULT_DURATION))
+
+        # Apply preset if specified (overrides type_mask)
+        counter_preset = kwargs.get("counter_preset")
+        if counter_preset is not None and str(counter_preset) in PRESETS:
+            preset = PRESETS[str(counter_preset)]
+            type_mask = preset.type_mask
 
         # Step 1: Configure counter
         yield self._make_result(
