@@ -7,7 +7,6 @@ import json
 import click
 
 from serialcables_switchtec.core.device import SwitchtecDevice
-from serialcables_switchtec.core.performance import PerformanceManager
 from serialcables_switchtec.exceptions import SwitchtecError
 
 
@@ -26,8 +25,30 @@ def perf_group(ctx: click.Context) -> None:
     help="Comma-separated list of physical port IDs.",
 )
 @click.option("--clear", is_flag=True, default=False, help="Clear counters after reading.")
+@click.option("--watch", is_flag=True, default=False, help="Continuous monitoring mode.")
+@click.option(
+    "--interval",
+    default=1.0,
+    type=float,
+    help="Seconds between samples (with --watch).",
+)
+@click.option(
+    "--count",
+    "sample_count",
+    default=0,
+    type=int,
+    help="Number of samples, 0=infinite (with --watch).",
+)
 @click.pass_context
-def perf_bw(ctx: click.Context, device_path: str, ports: str, clear: bool) -> None:
+def perf_bw(
+    ctx: click.Context,
+    device_path: str,
+    ports: str,
+    clear: bool,
+    watch: bool,
+    interval: float,
+    sample_count: int,
+) -> None:
     """Get bandwidth counters for specified ports."""
     try:
         port_ids = [int(p.strip()) for p in ports.split(",")]
@@ -42,30 +63,46 @@ def perf_bw(ctx: click.Context, device_path: str, ports: str, clear: bool) -> No
 
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            mgr = PerformanceManager(dev)
-            results = mgr.bw_get(port_ids, clear=clear)
-            if ctx.obj.get("json_output"):
-                click.echo(json.dumps(
-                    [r.model_dump() for r in results], indent=2
-                ))
+            if watch:
+                json_output = ctx.obj.get("json_output")
+                for sample in dev.monitor.watch_bw(
+                    port_ids, interval=interval, count=sample_count
+                ):
+                    if json_output:
+                        click.echo(sample.model_dump_json())
+                    else:
+                        click.echo(
+                            f"[{sample.elapsed_s:>8.1f}s] Port {sample.port_id}: "
+                            f"egress={sample.egress_total} "
+                            f"ingress={sample.ingress_total} "
+                            f"(time={sample.time_us} us)"
+                        )
             else:
-                for port_id, r in zip(port_ids, results):
-                    click.echo(f"Port {port_id} (time={r.time_us} us):")
-                    click.echo(
-                        f"  Egress:  posted={r.egress.posted} "
-                        f"comp={r.egress.comp} "
-                        f"nonposted={r.egress.nonposted} "
-                        f"total={r.egress.total}"
-                    )
-                    click.echo(
-                        f"  Ingress: posted={r.ingress.posted} "
-                        f"comp={r.ingress.comp} "
-                        f"nonposted={r.ingress.nonposted} "
-                        f"total={r.ingress.total}"
-                    )
+                results = dev.performance.bw_get(port_ids, clear=clear)
+                if ctx.obj.get("json_output"):
+                    click.echo(json.dumps(
+                        [r.model_dump() for r in results], indent=2
+                    ))
+                else:
+                    for port_id, r in zip(port_ids, results):
+                        click.echo(f"Port {port_id} (time={r.time_us} us):")
+                        click.echo(
+                            f"  Egress:  posted={r.egress.posted} "
+                            f"comp={r.egress.comp} "
+                            f"nonposted={r.egress.nonposted} "
+                            f"total={r.egress.total}"
+                        )
+                        click.echo(
+                            f"  Ingress: posted={r.ingress.posted} "
+                            f"comp={r.ingress.comp} "
+                            f"nonposted={r.ingress.nonposted} "
+                            f"total={r.ingress.total}"
+                        )
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
         raise click.Abort()
+    except KeyboardInterrupt:
+        click.echo("\nMonitoring stopped.")
 
 
 @perf_group.command("latency-setup")
@@ -79,8 +116,7 @@ def perf_latency_setup(
     """Configure latency measurement between two ports."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            mgr = PerformanceManager(dev)
-            mgr.lat_setup(egress, ingress, clear=clear)
+            dev.performance.lat_setup(egress, ingress, clear=clear)
             click.echo(
                 f"Latency measurement configured: egress={egress} ingress={ingress}"
             )
@@ -100,8 +136,7 @@ def perf_latency(
     """Get latency measurement for an egress port."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            mgr = PerformanceManager(dev)
-            result = mgr.lat_get(egress, clear=clear)
+            result = dev.performance.lat_get(egress, clear=clear)
             if ctx.obj.get("json_output"):
                 click.echo(result.model_dump_json(indent=2))
             else:

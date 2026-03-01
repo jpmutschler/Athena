@@ -31,10 +31,11 @@ class EventManager:
             and PFF events.
         """
         summary = SwitchtecEventSummary()
-        ret = self._dev.lib.switchtec_event_summary(
-            self._dev.handle,
-            ctypes.byref(summary),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_event_summary(
+                self._dev.handle,
+                ctypes.byref(summary),
+            )
         check_error(ret, "event_summary")
 
         global_count = summary.global_events
@@ -73,13 +74,14 @@ class EventManager:
             for i, val in enumerate(data[:5]):
                 data_arr[i] = val
 
-        ret = self._dev.lib.switchtec_event_ctl(
-            self._dev.handle,
-            int(event_id),
-            index,
-            int(flags),
-            data_arr,
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_event_ctl(
+                self._dev.handle,
+                int(event_id),
+                index,
+                int(flags),
+                data_arr,
+            )
         check_error(ret, "event_ctl")
         logger.info(
             "event_ctl",
@@ -95,6 +97,11 @@ class EventManager:
         Args:
             timeout_ms: Timeout in milliseconds. -1 for infinite.
         """
+        # NOTE: Intentionally does NOT acquire device_op().
+        # This is a blocking call that can wait indefinitely (timeout_ms=-1).
+        # Holding the lock would starve all other device operations.
+        # The C library's event_wait uses a separate poll/ioctl path
+        # that is safe to call concurrently with other operations.
         ret = self._dev.lib.switchtec_event_wait(
             self._dev.handle,
             timeout_ms,

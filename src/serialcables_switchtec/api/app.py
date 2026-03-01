@@ -80,6 +80,9 @@ def create_app() -> FastAPI:
     from serialcables_switchtec.api.routes.firmware import (
         router as firmware_router,
     )
+    from serialcables_switchtec.api.routes.mrpc import (
+        router as mrpc_router,
+    )
     from serialcables_switchtec.api.routes.osa import (
         router as osa_router,
     )
@@ -130,6 +133,12 @@ def create_app() -> FastAPI:
         fabric_router,
         prefix="/api/devices",
         tags=["fabric"],
+        dependencies=auth_dep,
+    )
+    app.include_router(
+        mrpc_router,
+        prefix="/api/devices",
+        tags=["mrpc"],
         dependencies=auth_dep,
     )
     app.include_router(

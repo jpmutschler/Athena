@@ -47,12 +47,13 @@ class FabricManager:
             control_type: The control operation to perform.
             hot_reset_flag: Hot reset flag (only relevant for hot-reset).
         """
-        ret = self._dev.lib.switchtec_port_control(
-            self._dev.handle,
-            int(control_type),
-            phys_port_id,
-            int(hot_reset_flag),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_port_control(
+                self._dev.handle,
+                int(control_type),
+                phys_port_id,
+                int(hot_reset_flag),
+            )
         check_error(ret, "port_control")
         logger.info(
             "port_control",
@@ -70,11 +71,12 @@ class FabricManager:
             FabPortConfig with the port's current configuration.
         """
         config = SwitchtecFabPortConfig()
-        ret = self._dev.lib.switchtec_fab_port_config_get(
-            self._dev.handle,
-            phys_port_id,
-            ctypes.byref(config),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_fab_port_config_get(
+                self._dev.handle,
+                phys_port_id,
+                ctypes.byref(config),
+            )
         check_error(ret, "fab_port_config_get")
 
         return FabPortConfig(
@@ -98,11 +100,12 @@ class FabricManager:
         c_config.clock_sris = config.clock_sris
         c_config.hvd_inst = config.hvd_inst
         c_config.link_width = config.link_width
-        ret = self._dev.lib.switchtec_fab_port_config_set(
-            self._dev.handle,
-            config.phys_port_id,
-            ctypes.byref(c_config),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_fab_port_config_set(
+                self._dev.handle,
+                config.phys_port_id,
+                ctypes.byref(c_config),
+            )
         check_error(ret, "fab_port_config_set")
         logger.info("port_config_set", port=config.phys_port_id)
 
@@ -118,10 +121,11 @@ class FabricManager:
         req.host_log_port_id = request.host_log_port_id
         req.ep_sw_idx = request.ep_sw_idx
         req.ep_phys_port_id = request.ep_phys_port_id
-        ret = self._dev.lib.switchtec_gfms_bind(
-            self._dev.handle,
-            ctypes.byref(req),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_gfms_bind(
+                self._dev.handle,
+                ctypes.byref(req),
+            )
         check_error(ret, "gfms_bind")
         logger.info(
             "gfms_bind",
@@ -140,10 +144,11 @@ class FabricManager:
         req.host_phys_port_id = request.host_phys_port_id
         req.host_log_port_id = request.host_log_port_id
         req.opt = request.opt
-        ret = self._dev.lib.switchtec_gfms_unbind(
-            self._dev.handle,
-            ctypes.byref(req),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_gfms_unbind(
+                self._dev.handle,
+                ctypes.byref(req),
+            )
         check_error(ret, "gfms_unbind")
         logger.info(
             "gfms_unbind",
@@ -152,8 +157,9 @@ class FabricManager:
 
     def clear_gfms_events(self) -> None:
         """Clear all GFMS events."""
-        ret = self._dev.lib.switchtec_clear_gfms_events(
-            self._dev.handle,
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_clear_gfms_events(
+                self._dev.handle,
+            )
         check_error(ret, "clear_gfms_events")
         logger.info("gfms_events_cleared")

@@ -84,15 +84,16 @@ class DiagnosticsManager:
         x_range = Range(start=x_start, end=x_end, step=x_step)
         y_range = Range(start=y_start, end=y_end, step=y_step)
 
-        ret = self._dev.lib.switchtec_diag_eye_start(
-            self._dev.handle, mask,
-            ctypes.byref(x_range), ctypes.byref(y_range),
-            step_interval, capture_depth, sar_sel, intleav_sel,
-            hstep, data_mode, eye_mode, refclk, vstep,
-        )
-        check_error(ret, "eye_start")
-        self._eye_x_range = EyeRange(start=x_start, end=x_end, step=x_step)
-        self._eye_y_range = EyeRange(start=y_start, end=y_end, step=y_step)
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_eye_start(
+                self._dev.handle, mask,
+                ctypes.byref(x_range), ctypes.byref(y_range),
+                step_interval, capture_depth, sar_sel, intleav_sel,
+                hstep, data_mode, eye_mode, refclk, vstep,
+            )
+            check_error(ret, "eye_start")
+            self._eye_x_range = EyeRange(start=x_start, end=x_end, step=x_step)
+            self._eye_y_range = EyeRange(start=y_start, end=y_end, step=y_step)
         logger.info("eye_capture_started", lane_mask=lane_mask)
 
     def eye_fetch(self, pixel_count: int) -> EyeData:
@@ -107,9 +108,10 @@ class DiagnosticsManager:
         pixels = (c_double * pixel_count)()
         lane_id = c_int()
 
-        ret = self._dev.lib.switchtec_diag_eye_fetch(
-            self._dev.handle, pixels, pixel_count, ctypes.byref(lane_id)
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_eye_fetch(
+                self._dev.handle, pixels, pixel_count, ctypes.byref(lane_id)
+            )
         check_error(ret, "eye_fetch")
 
         x_range = self._eye_x_range or EyeRange(start=0, end=0, step=1)
@@ -124,14 +126,16 @@ class DiagnosticsManager:
 
     def eye_cancel(self) -> None:
         """Cancel an in-progress eye diagram capture."""
-        ret = self._dev.lib.switchtec_diag_eye_cancel(self._dev.handle)
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_eye_cancel(self._dev.handle)
+            self._eye_x_range = None
+            self._eye_y_range = None
         check_error(ret, "eye_cancel")
-        self._eye_x_range = None
-        self._eye_y_range = None
 
     def eye_set_mode(self, mode: int) -> None:
         """Set eye diagram data mode (raw vs ratio)."""
-        ret = self._dev.lib.switchtec_diag_eye_set_mode(self._dev.handle, mode)
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_eye_set_mode(self._dev.handle, mode)
         check_error(ret, "eye_set_mode")
 
     def eye_read(
@@ -145,10 +149,11 @@ class DiagnosticsManager:
         num_phases = c_int()
         ber_data = (c_double * max_phases)()
 
-        ret = self._dev.lib.switchtec_diag_eye_read(
-            self._dev.handle, lane_id, bin_idx,
-            ctypes.byref(num_phases), ber_data,
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_eye_read(
+                self._dev.handle, lane_id, bin_idx,
+                ctypes.byref(num_phases), ber_data,
+            )
         check_error(ret, "eye_read")
         return num_phases.value, [ber_data[i] for i in range(num_phases.value)]
 
@@ -169,9 +174,10 @@ class DiagnosticsManager:
         log_count = c_int(max_entries)
         log_data = (SwitchtecDiagLtssmLog * max_entries)()
 
-        ret = self._dev.lib.switchtec_diag_ltssm_log(
-            self._dev.handle, port_id, ctypes.byref(log_count), log_data
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_ltssm_log(
+                self._dev.handle, port_id, ctypes.byref(log_count), log_data
+            )
         check_error(ret, "ltssm_log")
 
         gen = self._dev.generation
@@ -192,7 +198,8 @@ class DiagnosticsManager:
 
     def ltssm_clear(self, port_id: int) -> None:
         """Clear LTSSM log for a port."""
-        ret = self._dev.lib.switchtec_diag_ltssm_clear(self._dev.handle, port_id)
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_ltssm_clear(self._dev.handle, port_id)
         check_error(ret, "ltssm_clear")
 
     # ─── Loopback ───────────────────────────────────────────────────
@@ -208,11 +215,12 @@ class DiagnosticsManager:
         ltssm_speed: DiagLtssmSpeed = DiagLtssmSpeed.GEN4,
     ) -> None:
         """Configure loopback on a port."""
-        ret = self._dev.lib.switchtec_diag_loopback_set(
-            self._dev.handle, port_id,
-            int(enable), int(enable_parallel), int(enable_external),
-            int(enable_ltssm), int(enable_pipe), int(ltssm_speed),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_loopback_set(
+                self._dev.handle, port_id,
+                int(enable), int(enable_parallel), int(enable_external),
+                int(enable_ltssm), int(enable_pipe), int(ltssm_speed),
+            )
         check_error(ret, "loopback_set")
 
     def loopback_get(self, port_id: int) -> LoopbackStatus:
@@ -220,10 +228,11 @@ class DiagnosticsManager:
         enabled = c_int()
         ltssm_speed = c_int()
 
-        ret = self._dev.lib.switchtec_diag_loopback_get(
-            self._dev.handle, port_id,
-            ctypes.byref(enabled), ctypes.byref(ltssm_speed),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_loopback_get(
+                self._dev.handle, port_id,
+                ctypes.byref(enabled), ctypes.byref(ltssm_speed),
+            )
         check_error(ret, "loopback_get")
 
         return LoopbackStatus(
@@ -241,17 +250,19 @@ class DiagnosticsManager:
         link_speed: DiagPatternLinkRate = DiagPatternLinkRate.GEN4,
     ) -> None:
         """Set pattern generator on a port."""
-        ret = self._dev.lib.switchtec_diag_pattern_gen_set(
-            self._dev.handle, port_id, int(pattern), int(link_speed)
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_pattern_gen_set(
+                self._dev.handle, port_id, int(pattern), int(link_speed)
+            )
         check_error(ret, "pattern_gen_set")
 
     def pattern_gen_get(self, port_id: int) -> int:
         """Get current pattern generator type for a port."""
         pattern_type = c_int()
-        ret = self._dev.lib.switchtec_diag_pattern_gen_get(
-            self._dev.handle, port_id, ctypes.byref(pattern_type)
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_pattern_gen_get(
+                self._dev.handle, port_id, ctypes.byref(pattern_type)
+            )
         check_error(ret, "pattern_gen_get")
         return pattern_type.value
 
@@ -259,9 +270,10 @@ class DiagnosticsManager:
         self, port_id: int, pattern: DiagPattern = DiagPattern.PRBS_31
     ) -> None:
         """Set pattern monitor on a port."""
-        ret = self._dev.lib.switchtec_diag_pattern_mon_set(
-            self._dev.handle, port_id, int(pattern)
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_pattern_mon_set(
+                self._dev.handle, port_id, int(pattern)
+            )
         check_error(ret, "pattern_mon_set")
 
     def pattern_mon_get(
@@ -271,10 +283,11 @@ class DiagnosticsManager:
         pattern_type = c_int()
         err_cnt = c_uint64()
 
-        ret = self._dev.lib.switchtec_diag_pattern_mon_get(
-            self._dev.handle, port_id, lane_id,
-            ctypes.byref(pattern_type), ctypes.byref(err_cnt),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_pattern_mon_get(
+                self._dev.handle, port_id, lane_id,
+                ctypes.byref(pattern_type), ctypes.byref(err_cnt),
+            )
         check_error(ret, "pattern_mon_get")
 
         return PatternMonResult(
@@ -286,9 +299,10 @@ class DiagnosticsManager:
 
     def pattern_inject(self, port_id: int, err_count: int = 1) -> None:
         """Inject errors into pattern stream."""
-        ret = self._dev.lib.switchtec_diag_pattern_inject(
-            self._dev.handle, port_id, err_count
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_pattern_inject(
+                self._dev.handle, port_id, err_count
+            )
         check_error(ret, "pattern_inject")
 
     # ─── Receiver Object ────────────────────────────────────────────
@@ -301,9 +315,10 @@ class DiagnosticsManager:
     ) -> ReceiverObject:
         """Dump receiver calibration object."""
         result = SwitchtecRcvrObj()
-        ret = self._dev.lib.switchtec_diag_rcvr_obj(
-            self._dev.handle, port_id, lane_id, int(link), ctypes.byref(result)
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_rcvr_obj(
+                self._dev.handle, port_id, lane_id, int(link), ctypes.byref(result)
+            )
         check_error(ret, "rcvr_obj")
 
         return ReceiverObject(
@@ -323,9 +338,10 @@ class DiagnosticsManager:
     ) -> ReceiverExt:
         """Dump extended receiver calibration data."""
         result = SwitchtecRcvrExt()
-        ret = self._dev.lib.switchtec_diag_rcvr_ext(
-            self._dev.handle, port_id, lane_id, int(link), ctypes.byref(result)
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_rcvr_ext(
+                self._dev.handle, port_id, lane_id, int(link), ctypes.byref(result)
+            )
         check_error(ret, "rcvr_ext")
 
         return ReceiverExt(
@@ -346,10 +362,11 @@ class DiagnosticsManager:
     ) -> PortEqCoeff:
         """Get port equalization TX coefficients."""
         result = SwitchtecPortEqCoeff()
-        ret = self._dev.lib.switchtec_diag_port_eq_tx_coeff(
-            self._dev.handle, port_id, prev_speed,
-            int(end), int(link), ctypes.byref(result),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_port_eq_tx_coeff(
+                self._dev.handle, port_id, prev_speed,
+                int(end), int(link), ctypes.byref(result),
+            )
         check_error(ret, "port_eq_tx_coeff")
 
         cursors = [
@@ -366,9 +383,10 @@ class DiagnosticsManager:
     ) -> PortEqTable:
         """Get port equalization table."""
         result = SwitchtecPortEqTable()
-        ret = self._dev.lib.switchtec_diag_port_eq_tx_table(
-            self._dev.handle, port_id, prev_speed, int(link), ctypes.byref(result)
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_port_eq_tx_table(
+                self._dev.handle, port_id, prev_speed, int(link), ctypes.byref(result)
+            )
         check_error(ret, "port_eq_tx_table")
 
         steps = [
@@ -400,10 +418,11 @@ class DiagnosticsManager:
     ) -> PortEqTxFslf:
         """Get port equalization TX FS/LF values."""
         result = SwitchtecPortEqTxFslf()
-        ret = self._dev.lib.switchtec_diag_port_eq_tx_fslf(
-            self._dev.handle, port_id, prev_speed, lane_id,
-            int(end), int(link), ctypes.byref(result),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_port_eq_tx_fslf(
+                self._dev.handle, port_id, prev_speed, lane_id,
+                int(end), int(link), ctypes.byref(result),
+            )
         check_error(ret, "port_eq_tx_fslf")
         return PortEqTxFslf(fs=result.fs, lf=result.lf)
 
@@ -411,14 +430,16 @@ class DiagnosticsManager:
 
     def cross_hair_enable(self, lane_id: int) -> None:
         """Enable cross-hair measurement on a lane."""
-        ret = self._dev.lib.switchtec_diag_cross_hair_enable(
-            self._dev.handle, lane_id
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_cross_hair_enable(
+                self._dev.handle, lane_id
+            )
         check_error(ret, "cross_hair_enable")
 
     def cross_hair_disable(self) -> None:
         """Disable cross-hair measurement."""
-        ret = self._dev.lib.switchtec_diag_cross_hair_disable(self._dev.handle)
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_cross_hair_disable(self._dev.handle)
         check_error(ret, "cross_hair_disable")
 
     def cross_hair_get(
@@ -426,9 +447,10 @@ class DiagnosticsManager:
     ) -> list[CrossHairResult]:
         """Get cross-hair measurement results."""
         results_arr = (SwitchtecDiagCrossHair * num_lanes)()
-        ret = self._dev.lib.switchtec_diag_cross_hair_get(
-            self._dev.handle, start_lane_id, num_lanes, results_arr
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_diag_cross_hair_get(
+                self._dev.handle, start_lane_id, num_lanes, results_arr
+            )
         check_error(ret, "cross_hair_get")
 
         results: list[CrossHairResult] = []

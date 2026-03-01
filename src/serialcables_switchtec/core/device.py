@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import ctypes
 import threading
+from collections.abc import Generator
+from contextlib import contextmanager
 from ctypes import POINTER, c_float, c_int
 from typing import TYPE_CHECKING, Self
 
@@ -17,6 +19,7 @@ from serialcables_switchtec.bindings.library import get_library, load_library
 from serialcables_switchtec.bindings.types import SwitchtecDeviceInfo, SwitchtecStatus
 from serialcables_switchtec.exceptions import (
     DeviceOpenError,
+    InvalidParameterError,
     SwitchtecError,
     check_error,
     check_null,
@@ -31,10 +34,12 @@ from serialcables_switchtec.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from serialcables_switchtec.core.diagnostics import DiagnosticsManager
+    from serialcables_switchtec.core.error_injection import ErrorInjector
     from serialcables_switchtec.core.evcntr import EventCounterManager
     from serialcables_switchtec.core.events import EventManager
     from serialcables_switchtec.core.fabric import FabricManager
     from serialcables_switchtec.core.firmware import FirmwareManager
+    from serialcables_switchtec.core.monitor import LinkHealthMonitor
     from serialcables_switchtec.core.osa import OrderedSetAnalyzer
     from serialcables_switchtec.core.performance import PerformanceManager
 
@@ -67,6 +72,8 @@ _PHASE_NAMES = {
     SwitchtecBootPhase.UNKNOWN: "Unknown Phase",
 }
 
+
+MRPC_MAX_DATA_LEN = 1024
 
 _cached_lib: ctypes.CDLL | None = None
 _lib_init_lock = threading.Lock()
@@ -106,7 +113,9 @@ class SwitchtecDevice:
         self._events_mgr: EventManager | None = None
         self._fabric_mgr: FabricManager | None = None
         self._firmware_mgr: FirmwareManager | None = None
+        self._monitor_mgr: LinkHealthMonitor | None = None
         self._osa_mgr: OrderedSetAnalyzer | None = None
+        self._injector_mgr: ErrorInjector | None = None
         self._performance_mgr: PerformanceManager | None = None
 
     @classmethod
@@ -179,6 +188,16 @@ class SwitchtecDevice:
         """Library handle for sub-managers."""
         return self._lib
 
+    @contextmanager
+    def device_op(self) -> Generator[None, None, None]:
+        """Acquire the device operation lock for thread-safe C library calls.
+
+        All core managers should use this when calling into the C library
+        to prevent concurrent access to the same device handle.
+        """
+        with self._op_lock:
+            yield
+
     @property
     def diagnostics(self) -> DiagnosticsManager:
         """Access diagnostics operations."""
@@ -224,6 +243,17 @@ class SwitchtecDevice:
         return self._firmware_mgr
 
     @property
+    def monitor(self) -> LinkHealthMonitor:
+        """Access link health monitoring operations."""
+        if self._monitor_mgr is None:
+            with self._mgr_lock:
+                if self._monitor_mgr is None:
+                    from serialcables_switchtec.core.monitor import LinkHealthMonitor
+
+                    self._monitor_mgr = LinkHealthMonitor(self)
+        return self._monitor_mgr
+
+    @property
     def fabric(self) -> FabricManager:
         """Access fabric/topology operations (PAX devices only)."""
         if self._fabric_mgr is None:
@@ -246,6 +276,17 @@ class SwitchtecDevice:
         return self._osa_mgr
 
     @property
+    def injector(self) -> ErrorInjector:
+        """Access error injection operations."""
+        if self._injector_mgr is None:
+            with self._mgr_lock:
+                if self._injector_mgr is None:
+                    from serialcables_switchtec.core.error_injection import ErrorInjector
+
+                    self._injector_mgr = ErrorInjector(self)
+        return self._injector_mgr
+
+    @property
     def performance(self) -> PerformanceManager:
         """Access performance monitoring operations."""
         if self._performance_mgr is None:
@@ -259,23 +300,27 @@ class SwitchtecDevice:
     @property
     def name(self) -> str:
         """Device name."""
-        result = self._lib.switchtec_name(self.handle)
+        with self.device_op():
+            result = self._lib.switchtec_name(self.handle)
         return result.decode() if result else ""
 
     @property
     def partition(self) -> int:
         """Current partition number."""
-        return self._lib.switchtec_partition(self.handle)
+        with self.device_op():
+            return self._lib.switchtec_partition(self.handle)
 
     @property
     def device_id(self) -> int:
         """PCI device ID."""
-        return self._lib.switchtec_device_id(self.handle)
+        with self.device_op():
+            return self._lib.switchtec_device_id(self.handle)
 
     @property
     def generation(self) -> SwitchtecGen:
         """PCIe generation."""
-        return SwitchtecGen(self._lib.switchtec_gen(self.handle))
+        with self.device_op():
+            return SwitchtecGen(self._lib.switchtec_gen(self.handle))
 
     @property
     def generation_str(self) -> str:
@@ -285,7 +330,8 @@ class SwitchtecDevice:
     @property
     def variant(self) -> SwitchtecVariant:
         """Device variant (PFX, PSX, PAX, etc.)."""
-        return SwitchtecVariant(self._lib.switchtec_variant(self.handle))
+        with self.device_op():
+            return SwitchtecVariant(self._lib.switchtec_variant(self.handle))
 
     @property
     def variant_str(self) -> str:
@@ -295,7 +341,8 @@ class SwitchtecDevice:
     @property
     def boot_phase(self) -> SwitchtecBootPhase:
         """Current boot phase."""
-        return SwitchtecBootPhase(self._lib.switchtec_boot_phase(self.handle))
+        with self.device_op():
+            return SwitchtecBootPhase(self._lib.switchtec_boot_phase(self.handle))
 
     @property
     def boot_phase_str(self) -> str:
@@ -305,7 +352,8 @@ class SwitchtecDevice:
     @property
     def die_temperature(self) -> float:
         """Die temperature in degrees Celsius."""
-        return self._lib.switchtec_die_temp(self.handle)
+        with self.device_op():
+            return self._lib.switchtec_die_temp(self.handle)
 
     def get_die_temperatures(self, nr_sensors: int = 5) -> list[float]:
         """Get temperature readings from multiple sensors.
@@ -317,14 +365,16 @@ class SwitchtecDevice:
             List of temperature readings in degrees Celsius.
         """
         readings = (c_float * nr_sensors)()
-        ret = self._lib.switchtec_die_temps(self.handle, nr_sensors, readings)
+        with self.device_op():
+            ret = self._lib.switchtec_die_temps(self.handle, nr_sensors, readings)
         check_error(ret, "die_temps")
         return [readings[i] for i in range(nr_sensors)]
 
     def get_fw_version(self) -> str:
         """Get firmware version string."""
         buf = ctypes.create_string_buffer(256)
-        ret = self._lib.switchtec_get_fw_version(self.handle, buf, 256)
+        with self.device_op():
+            ret = self._lib.switchtec_get_fw_version(self.handle, buf, 256)
         check_error(ret, "get_fw_version")
         return buf.value.decode()
 
@@ -335,17 +385,25 @@ class SwitchtecDevice:
             List of PortStatus for each port.
         """
         status_ptr = POINTER(SwitchtecStatus)()
-        nr_ports = self._lib.switchtec_status(
-            self.handle, ctypes.byref(status_ptr)
-        )
-        check_error(nr_ports, "status")
-
-        try:
-            # Populate device info (Linux only)
-            self._lib.switchtec_get_devices(
-                self.handle, status_ptr, nr_ports
+        nr_ports = 0
+        with self.device_op():
+            nr_ports = self._lib.switchtec_status(
+                self.handle, ctypes.byref(status_ptr)
             )
+            check_error(nr_ports, "status")
 
+        # Wrap all post-status work in try/finally so status_free is
+        # always called, even if get_devices or result processing fails.
+        try:
+            with self.device_op():
+                # Populate device info within same lock scope.
+                # get_devices is a separate C call but operates on the
+                # status_ptr allocated above, not a new device query.
+                self._lib.switchtec_get_devices(
+                    self.handle, status_ptr, nr_ports
+                )
+
+            # Process results outside the lock
             results: list[PortStatus] = []
             for i in range(nr_ports):
                 s = status_ptr[i]
@@ -397,18 +455,20 @@ class SwitchtecDevice:
         """
         partition = c_int()
         port = c_int()
-        ret = self._lib.switchtec_pff_to_port(
-            self.handle, pff, ctypes.byref(partition), ctypes.byref(port)
-        )
+        with self.device_op():
+            ret = self._lib.switchtec_pff_to_port(
+                self.handle, pff, ctypes.byref(partition), ctypes.byref(port)
+            )
         check_error(ret, "pff_to_port")
         return partition.value, port.value
 
     def port_to_pff(self, partition: int, port: int) -> int:
         """Convert partition and port to PFF index."""
         pff = c_int()
-        ret = self._lib.switchtec_port_to_pff(
-            self.handle, partition, port, ctypes.byref(pff)
-        )
+        with self.device_op():
+            ret = self._lib.switchtec_port_to_pff(
+                self.handle, partition, port, ctypes.byref(pff)
+            )
         check_error(ret, "port_to_pff")
         return pff.value
 
@@ -418,10 +478,79 @@ class SwitchtecDevice:
         This will reset the switch chip and all connected PCIe devices.
         The device handle becomes invalid after this call.
         """
-        ret = self._lib.switchtec_hard_reset(self.handle)
+        with self.device_op():
+            ret = self._lib.switchtec_hard_reset(self.handle)
         check_error(ret, "hard_reset")
         self._closed = True
         logger.info("device_hard_reset")
+
+    def mrpc_cmd(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        resp_len: int = 0,
+    ) -> bytes:
+        """Send a raw MRPC command to the device.
+
+        This is a low-level interface for sending arbitrary MRPC commands.
+        Most users should prefer the typed manager APIs. Use this for
+        debugging, firmware development, or accessing commands not yet
+        wrapped by the Python API.
+
+        Args:
+            cmd: MRPC command ID (uint32).
+            payload: Command payload bytes. Empty for commands with no
+                payload.
+            resp_len: Expected response length in bytes. 0 if no response.
+
+        Returns:
+            Response bytes (empty if resp_len is 0).
+
+        Raises:
+            SwitchtecError: If the MRPC command fails.
+        """
+        if len(payload) > MRPC_MAX_DATA_LEN:
+            raise InvalidParameterError(
+                f"MRPC payload size {len(payload)} exceeds maximum "
+                f"{MRPC_MAX_DATA_LEN} bytes"
+            )
+        if resp_len > MRPC_MAX_DATA_LEN:
+            raise InvalidParameterError(
+                f"MRPC response length {resp_len} exceeds maximum "
+                f"{MRPC_MAX_DATA_LEN} bytes"
+            )
+
+        logger.warning(
+            "mrpc_raw_command",
+            cmd=f"0x{cmd:x}",
+            payload_len=len(payload) if payload else 0,
+            resp_len=resp_len,
+        )
+
+        payload_buf = (
+            ctypes.create_string_buffer(payload) if payload else None
+        )
+        payload_len = len(payload) if payload else 0
+
+        if resp_len > 0:
+            resp_buf = ctypes.create_string_buffer(resp_len)
+        else:
+            resp_buf = None
+
+        with self.device_op():
+            ret = self._lib.switchtec_cmd(
+                self.handle,
+                cmd,
+                payload_buf,
+                payload_len,
+                resp_buf,
+                resp_len,
+            )
+        check_error(ret, f"mrpc_cmd(0x{cmd:x})")
+
+        if resp_buf is not None:
+            return resp_buf.raw[:resp_len]
+        return b""
 
     def get_summary(self) -> DeviceSummary:
         """Get a summary of the device's current state."""

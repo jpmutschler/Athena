@@ -27,6 +27,13 @@ def _make_mock_device(**overrides: object) -> MagicMock:
     mock_dev.name = overrides.get("name", "switchtec0")
     mock_dev.__enter__ = MagicMock(return_value=mock_dev)
     mock_dev.__exit__ = MagicMock(return_value=False)
+
+    # Setup lazy property mocks
+    mock_dev.diagnostics = MagicMock()
+    mock_dev.injector = MagicMock()
+    mock_dev.performance = MagicMock()
+    mock_dev.monitor = MagicMock()
+
     return mock_dev
 
 
@@ -100,15 +107,12 @@ class TestPerfHelp:
 class TestPerfBw:
     """Test the ``perf bw`` command."""
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_bw_single_port(self, mock_cls, mock_perf_cls) -> None:
+    def test_bw_single_port(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.bw_get.return_value = _sample_bw_results([0])
-        mock_perf_cls.return_value = mock_mgr
+        mock_dev.performance.bw_get.return_value = _sample_bw_results([0])
 
         runner = CliRunner()
         result = runner.invoke(
@@ -119,17 +123,14 @@ class TestPerfBw:
         assert "Port 0" in result.output
         assert "Egress" in result.output
         assert "Ingress" in result.output
-        mock_mgr.bw_get.assert_called_once_with([0], clear=False)
+        mock_dev.performance.bw_get.assert_called_once_with([0], clear=False)
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_bw_multiple_ports(self, mock_cls, mock_perf_cls) -> None:
+    def test_bw_multiple_ports(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.bw_get.return_value = _sample_bw_results([0, 1, 2])
-        mock_perf_cls.return_value = mock_mgr
+        mock_dev.performance.bw_get.return_value = _sample_bw_results([0, 1, 2])
 
         runner = CliRunner()
         result = runner.invoke(
@@ -140,17 +141,14 @@ class TestPerfBw:
         assert "Port 0" in result.output
         assert "Port 1" in result.output
         assert "Port 2" in result.output
-        mock_mgr.bw_get.assert_called_once_with([0, 1, 2], clear=False)
+        mock_dev.performance.bw_get.assert_called_once_with([0, 1, 2], clear=False)
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_bw_with_clear(self, mock_cls, mock_perf_cls) -> None:
+    def test_bw_with_clear(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.bw_get.return_value = _sample_bw_results([5])
-        mock_perf_cls.return_value = mock_mgr
+        mock_dev.performance.bw_get.return_value = _sample_bw_results([5])
 
         runner = CliRunner()
         result = runner.invoke(
@@ -158,17 +156,14 @@ class TestPerfBw:
         )
 
         assert result.exit_code == 0
-        mock_mgr.bw_get.assert_called_once_with([5], clear=True)
+        mock_dev.performance.bw_get.assert_called_once_with([5], clear=True)
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_bw_json_output(self, mock_cls, mock_perf_cls) -> None:
+    def test_bw_json_output(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.bw_get.return_value = _sample_bw_results([0])
-        mock_perf_cls.return_value = mock_mgr
+        mock_dev.performance.bw_get.return_value = _sample_bw_results([0])
 
         runner = CliRunner()
         result = runner.invoke(
@@ -182,15 +177,12 @@ class TestPerfBw:
         assert parsed[0]["time_us"] == 1000
         assert parsed[0]["egress"]["posted"] == 100
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_bw_shows_counter_details(self, mock_cls, mock_perf_cls) -> None:
+    def test_bw_shows_counter_details(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.bw_get.return_value = _sample_bw_results([0])
-        mock_perf_cls.return_value = mock_mgr
+        mock_dev.performance.bw_get.return_value = _sample_bw_results([0])
 
         runner = CliRunner()
         result = runner.invoke(
@@ -240,14 +232,11 @@ class TestPerfBw:
 class TestPerfLatencySetup:
     """Test the ``perf latency-setup`` command."""
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_latency_setup(self, mock_cls, mock_perf_cls) -> None:
+    def test_latency_setup(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_perf_cls.return_value = mock_mgr
 
         runner = CliRunner()
         result = runner.invoke(
@@ -262,16 +251,13 @@ class TestPerfLatencySetup:
         assert "configured" in result.output.lower()
         assert "egress=1" in result.output
         assert "ingress=2" in result.output
-        mock_mgr.lat_setup.assert_called_once_with(1, 2, clear=False)
+        mock_dev.performance.lat_setup.assert_called_once_with(1, 2, clear=False)
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_latency_setup_with_clear(self, mock_cls, mock_perf_cls) -> None:
+    def test_latency_setup_with_clear(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_perf_cls.return_value = mock_mgr
 
         runner = CliRunner()
         result = runner.invoke(
@@ -283,7 +269,7 @@ class TestPerfLatencySetup:
         )
 
         assert result.exit_code == 0
-        mock_mgr.lat_setup.assert_called_once_with(3, 4, clear=True)
+        mock_dev.performance.lat_setup.assert_called_once_with(3, 4, clear=True)
 
     def test_latency_setup_missing_egress(self) -> None:
         runner = CliRunner()
@@ -303,15 +289,12 @@ class TestPerfLatencySetup:
         # --ingress is required
         assert result.exit_code != 0
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_latency_setup_error(self, mock_cls, mock_perf_cls) -> None:
+    def test_latency_setup_error(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.lat_setup.side_effect = SwitchtecError("setup failed")
-        mock_perf_cls.return_value = mock_mgr
+        mock_dev.performance.lat_setup.side_effect = SwitchtecError("setup failed")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -334,15 +317,12 @@ class TestPerfLatencySetup:
 class TestPerfLatency:
     """Test the ``perf latency`` command."""
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_latency_get(self, mock_cls, mock_perf_cls) -> None:
+    def test_latency_get(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.lat_get.return_value = _sample_latency_result(5)
-        mock_perf_cls.return_value = mock_mgr
+        mock_dev.performance.lat_get.return_value = _sample_latency_result(5)
 
         runner = CliRunner()
         result = runner.invoke(
@@ -354,17 +334,14 @@ class TestPerfLatency:
         assert "Port 5" in result.output
         assert "current=42" in result.output
         assert "max=128" in result.output
-        mock_mgr.lat_get.assert_called_once_with(5, clear=False)
+        mock_dev.performance.lat_get.assert_called_once_with(5, clear=False)
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_latency_get_with_clear(self, mock_cls, mock_perf_cls) -> None:
+    def test_latency_get_with_clear(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.lat_get.return_value = _sample_latency_result(2)
-        mock_perf_cls.return_value = mock_mgr
+        mock_dev.performance.lat_get.return_value = _sample_latency_result(2)
 
         runner = CliRunner()
         result = runner.invoke(
@@ -373,17 +350,14 @@ class TestPerfLatency:
         )
 
         assert result.exit_code == 0
-        mock_mgr.lat_get.assert_called_once_with(2, clear=True)
+        mock_dev.performance.lat_get.assert_called_once_with(2, clear=True)
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_latency_json_output(self, mock_cls, mock_perf_cls) -> None:
+    def test_latency_json_output(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.lat_get.return_value = _sample_latency_result(7)
-        mock_perf_cls.return_value = mock_mgr
+        mock_dev.performance.lat_get.return_value = _sample_latency_result(7)
 
         runner = CliRunner()
         result = runner.invoke(
@@ -405,15 +379,12 @@ class TestPerfLatency:
         # --egress is required
         assert result.exit_code != 0
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_latency_error(self, mock_cls, mock_perf_cls) -> None:
+    def test_latency_error(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.lat_get.side_effect = SwitchtecError("read failed")
-        mock_perf_cls.return_value = mock_mgr
+        mock_dev.performance.lat_get.side_effect = SwitchtecError("read failed")
 
         runner = CliRunner()
         result = runner.invoke(

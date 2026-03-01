@@ -7,8 +7,6 @@ import json
 import click
 
 from serialcables_switchtec.core.device import SwitchtecDevice
-from serialcables_switchtec.core.diagnostics import DiagnosticsManager
-from serialcables_switchtec.core.error_injection import ErrorInjector
 from serialcables_switchtec.exceptions import SwitchtecError
 
 _PATTERN_MAP = {
@@ -40,8 +38,7 @@ def eye(device_path: str, lanes: str, x_step: int, y_step: int) -> None:
     try:
         lane_mask = [int(x) for x in lanes.split(",")][:4]
         with SwitchtecDevice.open(device_path) as dev:
-            diag_mgr = DiagnosticsManager(dev)
-            diag_mgr.eye_start(lane_mask=lane_mask, x_step=x_step, y_step=y_step)
+            dev.diagnostics.eye_start(lane_mask=lane_mask, x_step=x_step, y_step=y_step)
             click.echo("Eye diagram capture started.")
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
@@ -56,8 +53,7 @@ def eye_fetch(ctx: click.Context, device_path: str, pixels: int) -> None:
     """Fetch eye diagram data from an in-progress capture."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            diag_mgr = DiagnosticsManager(dev)
-            result = diag_mgr.eye_fetch(pixels)
+            result = dev.diagnostics.eye_fetch(pixels)
             if ctx.obj.get("json_output"):
                 click.echo(result.model_dump_json(indent=2))
             else:
@@ -76,8 +72,7 @@ def eye_cancel(device_path: str) -> None:
     """Cancel an in-progress eye diagram capture."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            diag_mgr = DiagnosticsManager(dev)
-            diag_mgr.eye_cancel()
+            dev.diagnostics.eye_cancel()
             click.echo("Eye diagram capture cancelled.")
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
@@ -92,8 +87,7 @@ def ltssm(ctx: click.Context, device_path: str, port_id: int) -> None:
     """Dump LTSSM state log for a port."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            diag_mgr = DiagnosticsManager(dev)
-            entries = diag_mgr.ltssm_log(port_id)
+            entries = dev.diagnostics.ltssm_log(port_id)
             if ctx.obj.get("json_output"):
                 click.echo(json.dumps([e.model_dump() for e in entries], indent=2))
             else:
@@ -114,8 +108,7 @@ def ltssm_clear(device_path: str, port_id: int) -> None:
     """Clear LTSSM log for a port."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            diag_mgr = DiagnosticsManager(dev)
-            diag_mgr.ltssm_clear(port_id)
+            dev.diagnostics.ltssm_clear(port_id)
             click.echo("LTSSM log cleared.")
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
@@ -136,10 +129,9 @@ def loopback(device_path: str, port_id: int, enable: bool, ltssm_speed: str) -> 
     """Configure loopback on a port."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            diag_mgr = DiagnosticsManager(dev)
             from serialcables_switchtec.bindings.constants import DiagLtssmSpeed
             speed_val = DiagLtssmSpeed(_LTSSM_SPEED_MAP[ltssm_speed.lower()])
-            diag_mgr.loopback_set(port_id, enable=enable, ltssm_speed=speed_val)
+            dev.diagnostics.loopback_set(port_id, enable=enable, ltssm_speed=speed_val)
             action = "enabled" if enable else "disabled"
             click.echo(f"Loopback {action} on port {port_id}.")
     except SwitchtecError as e:
@@ -166,11 +158,10 @@ def patgen(device_path: str, port_id: int, pattern: str, speed: str) -> None:
     """Set pattern generator on a port."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            diag_mgr = DiagnosticsManager(dev)
             from serialcables_switchtec.bindings.constants import DiagPattern, DiagPatternLinkRate
             pat_val = DiagPattern(_PATTERN_MAP[pattern.lower()])
             spd_val = DiagPatternLinkRate(_SPEED_MAP[speed.lower()])
-            diag_mgr.pattern_gen_set(port_id, pattern=pat_val, link_speed=spd_val)
+            dev.diagnostics.pattern_gen_set(port_id, pattern=pat_val, link_speed=spd_val)
             click.echo(f"Pattern generator set: {pattern} at {speed} on port {port_id}.")
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
@@ -186,8 +177,7 @@ def patmon(ctx: click.Context, device_path: str, port_id: int, lane_id: int) -> 
     """Get pattern monitor results."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            diag_mgr = DiagnosticsManager(dev)
-            result = diag_mgr.pattern_mon_get(port_id, lane_id)
+            result = dev.diagnostics.pattern_mon_get(port_id, lane_id)
             if ctx.obj.get("json_output"):
                 click.echo(result.model_dump_json(indent=2))
             else:
@@ -215,8 +205,7 @@ def dllp(device_path: str, port_id: int, data: int) -> None:
     """Inject a raw DLLP on a port."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            inj = ErrorInjector(dev)
-            inj.inject_dllp(port_id, data)
+            dev.injector.inject_dllp(port_id, data)
             click.echo(f"DLLP injected on port {port_id}.")
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
@@ -232,8 +221,7 @@ def dllp_crc(device_path: str, port_id: int, enable: bool, rate: int) -> None:
     """Enable/disable DLLP CRC error injection."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            inj = ErrorInjector(dev)
-            inj.inject_dllp_crc(port_id, enable, rate)
+            dev.injector.inject_dllp_crc(port_id, enable, rate)
             action = "enabled" if enable else "disabled"
             click.echo(f"DLLP CRC injection {action} on port {port_id}.")
     except SwitchtecError as e:
@@ -250,8 +238,7 @@ def tlp_lcrc(device_path: str, port_id: int, enable: bool, rate: int) -> None:
     """Enable/disable TLP LCRC error injection."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            inj = ErrorInjector(dev)
-            inj.inject_tlp_lcrc(port_id, enable, rate)
+            dev.injector.inject_tlp_lcrc(port_id, enable, rate)
             action = "enabled" if enable else "disabled"
             click.echo(f"TLP LCRC injection {action} on port {port_id}.")
     except SwitchtecError as e:
@@ -266,8 +253,7 @@ def seq_num(device_path: str, port_id: int) -> None:
     """Inject a TLP sequence number error."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            inj = ErrorInjector(dev)
-            inj.inject_tlp_seq_num(port_id)
+            dev.injector.inject_tlp_seq_num(port_id)
             click.echo(f"Sequence number error injected on port {port_id}.")
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
@@ -283,8 +269,7 @@ def ack_nack(device_path: str, port_id: int, seq_num: int, count: int) -> None:
     """Inject ACK/NACK errors."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            inj = ErrorInjector(dev)
-            inj.inject_ack_nack(port_id, seq_num, count)
+            dev.injector.inject_ack_nack(port_id, seq_num, count)
             click.echo(f"ACK/NACK errors injected on port {port_id}.")
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
@@ -298,8 +283,7 @@ def cto(device_path: str, port_id: int) -> None:
     """Inject completion timeout."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            inj = ErrorInjector(dev)
-            inj.inject_cto(port_id)
+            dev.injector.inject_cto(port_id)
             click.echo(f"Completion timeout injected on port {port_id}.")
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
@@ -319,10 +303,9 @@ def rcvr(ctx: click.Context, device_path: str, port_id: int, lane_id: int, link:
     """Dump receiver calibration object."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            diag_mgr = DiagnosticsManager(dev)
             from serialcables_switchtec.bindings.constants import DiagLink
             link_enum = DiagLink.CURRENT if link == "current" else DiagLink.PREVIOUS
-            result = diag_mgr.rcvr_obj(port_id, lane_id, link=link_enum)
+            result = dev.diagnostics.rcvr_obj(port_id, lane_id, link=link_enum)
             if ctx.obj.get("json_output"):
                 click.echo(result.model_dump_json(indent=2))
             else:
@@ -347,11 +330,10 @@ def eq(ctx: click.Context, device_path: str, port_id: int, end: str, link: str) 
     """Dump port equalization TX coefficients."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            diag_mgr = DiagnosticsManager(dev)
             from serialcables_switchtec.bindings.constants import DiagEnd, DiagLink
             end_enum = DiagEnd.LOCAL if end == "local" else DiagEnd.FAR_END
             link_enum = DiagLink.CURRENT if link == "current" else DiagLink.PREVIOUS
-            result = diag_mgr.port_eq_tx_coeff(port_id, end=end_enum, link=link_enum)
+            result = dev.diagnostics.port_eq_tx_coeff(port_id, end=end_enum, link=link_enum)
             if ctx.obj.get("json_output"):
                 click.echo(result.model_dump_json(indent=2))
             else:
@@ -373,18 +355,17 @@ def crosshair(ctx: click.Context, device_path: str, lane: int, action: str) -> N
     """Cross-hair measurement."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            diag_mgr = DiagnosticsManager(dev)
             if action == "enable":
-                diag_mgr.cross_hair_enable(lane)
+                dev.diagnostics.cross_hair_enable(lane)
                 click.echo(f"Cross-hair enabled on lane {lane}.")
             elif action == "disable":
-                diag_mgr.cross_hair_disable()
+                dev.diagnostics.cross_hair_disable()
                 click.echo("Cross-hair disabled.")
             else:
                 from serialcables_switchtec.bindings.constants import DIAG_CROSS_HAIR_MAX_LANES
                 start = 0 if lane < 0 else lane
                 num_lanes = DIAG_CROSS_HAIR_MAX_LANES if lane < 0 else 1
-                results = diag_mgr.cross_hair_get(start, num_lanes)
+                results = dev.diagnostics.cross_hair_get(start, num_lanes)
                 if ctx.obj.get("json_output"):
                     click.echo(json.dumps([r.model_dump() for r in results], indent=2))
                 else:

@@ -27,13 +27,15 @@ class OrderedSetAnalyzer:
         Args:
             stack_id: Stack ID to capture on.
         """
-        ret = self._dev.lib.switchtec_osa(self._dev.handle, stack_id, 1)
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_osa(self._dev.handle, stack_id, 1)
         check_error(ret, "osa_start")
         logger.info("osa_started", stack_id=stack_id)
 
     def stop(self, stack_id: int) -> None:
         """Stop OSA capture."""
-        ret = self._dev.lib.switchtec_osa(self._dev.handle, stack_id, 0)
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_osa(self._dev.handle, stack_id, 0)
         check_error(ret, "osa_stop")
         logger.info("osa_stopped", stack_id=stack_id)
 
@@ -54,9 +56,10 @@ class OrderedSetAnalyzer:
             link_rate: Link rate enum value.
             os_types: Ordered set type filter bitmask.
         """
-        ret = self._dev.lib.switchtec_osa_config_type(
-            self._dev.handle, stack_id, direction, lane_mask, link_rate, os_types
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_osa_config_type(
+                self._dev.handle, stack_id, direction, lane_mask, link_rate, os_types
+            )
         check_error(ret, "osa_config_type")
 
     def configure_pattern(
@@ -81,9 +84,10 @@ class OrderedSetAnalyzer:
         val = (c_uint32 * 4)(*value_data[:4])
         msk = (c_uint32 * 4)(*mask_data[:4])
 
-        ret = self._dev.lib.switchtec_osa_config_pattern(
-            self._dev.handle, stack_id, direction, lane_mask, link_rate, val, msk
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_osa_config_pattern(
+                self._dev.handle, stack_id, direction, lane_mask, link_rate, val, msk
+            )
         check_error(ret, "osa_config_pattern")
 
     def capture_control(
@@ -109,11 +113,12 @@ class OrderedSetAnalyzer:
             post_trigger: Post-trigger entries.
             os_types: Ordered set type filter.
         """
-        ret = self._dev.lib.switchtec_osa_capture_control(
-            self._dev.handle, stack_id, lane_mask, direction,
-            drop_single_os, stop_mode, snapshot_mode,
-            post_trigger, os_types,
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_osa_capture_control(
+                self._dev.handle, stack_id, lane_mask, direction,
+                drop_single_os, stop_mode, snapshot_mode,
+                post_trigger, os_types,
+            )
         check_error(ret, "osa_capture_control")
 
     def capture_data(
@@ -124,14 +129,16 @@ class OrderedSetAnalyzer:
         Returns:
             Return code from the capture data command.
         """
-        ret = self._dev.lib.switchtec_osa_capture_data(
-            self._dev.handle, stack_id, lane, direction
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_osa_capture_data(
+                self._dev.handle, stack_id, lane, direction
+            )
         check_error(ret, "osa_capture_data")
         return ret
 
     def dump_config(self, stack_id: int) -> int:
         """Dump current OSA configuration."""
-        ret = self._dev.lib.switchtec_osa_dump_conf(self._dev.handle, stack_id)
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_osa_dump_conf(self._dev.handle, stack_id)
         check_error(ret, "osa_dump_conf")
         return ret

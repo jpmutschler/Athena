@@ -60,14 +60,15 @@ class FirmwareManager:
             toggle_cfg: Toggle config partition.
             toggle_riotcore: Toggle RIoT Core partition.
         """
-        ret = self._dev.lib.switchtec_fw_toggle_active_partition(
-            self._dev.handle,
-            int(toggle_bl2),
-            int(toggle_key),
-            int(toggle_fw),
-            int(toggle_cfg),
-            int(toggle_riotcore),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_fw_toggle_active_partition(
+                self._dev.handle,
+                int(toggle_bl2),
+                int(toggle_key),
+                int(toggle_fw),
+                int(toggle_cfg),
+                int(toggle_riotcore),
+            )
         check_error(ret, "fw_toggle_active_partition")
         logger.info(
             "firmware_partition_toggled",
@@ -81,7 +82,8 @@ class FirmwareManager:
         Returns:
             True if boot partition is read-only, False otherwise.
         """
-        result = self._dev.lib.switchtec_fw_is_boot_ro(self._dev.handle)
+        with self._dev.device_op():
+            result = self._dev.lib.switchtec_fw_is_boot_ro(self._dev.handle)
         return bool(result)
 
     def set_boot_ro(self, *, read_only: bool = True) -> None:
@@ -90,10 +92,11 @@ class FirmwareManager:
         Args:
             read_only: If True, set boot partition to read-only.
         """
-        ret = self._dev.lib.switchtec_fw_set_boot_ro(
-            self._dev.handle,
-            int(read_only),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_fw_set_boot_ro(
+                self._dev.handle,
+                int(read_only),
+            )
         check_error(ret, "fw_set_boot_ro")
         logger.info("boot_ro_set", read_only=read_only)
 
@@ -120,12 +123,13 @@ class FirmwareManager:
                 f"{MAX_FW_READ_LENGTH}"
             )
         buf = ctypes.create_string_buffer(length)
-        ret = self._dev.lib.switchtec_fw_read(
-            self._dev.handle,
-            address,
-            length,
-            buf,
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_fw_read(
+                self._dev.handle,
+                address,
+                length,
+                buf,
+            )
         check_error(ret, "fw_read")
         return buf.raw
 
@@ -157,6 +161,9 @@ class FirmwareManager:
         else:
             c_callback = _FwProgressCallback(lambda cur, tot: None)
 
+        # NOTE: write_firmware intentionally does NOT acquire device_op.
+        # This is a long-running blocking operation that would starve other
+        # threads if the lock were held for the entire duration.
         fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_BINARY", 0))
         try:
             ret = self._dev.lib.switchtec_fw_write_fd(
@@ -233,7 +240,8 @@ class FirmwareManager:
         Returns:
             FwPartSummary with all partition info populated.
         """
-        raw_ptr = self._dev.lib.switchtec_fw_part_summary(self._dev.handle)
+        with self._dev.device_op():
+            raw_ptr = self._dev.lib.switchtec_fw_part_summary(self._dev.handle)
         if not raw_ptr:
             logger.warning("fw_part_summary returned NULL, falling back to boot-RO only")
             return FwPartSummary(is_boot_ro=self.is_boot_ro())

@@ -78,6 +78,12 @@ def evcntr_setup(
               help="Clear counters after reading.")
 @click.option("--show-setup", is_flag=True, default=False,
               help="Also show counter setup configuration.")
+@click.option("--watch", is_flag=True, default=False,
+              help="Continuous monitoring mode.")
+@click.option("--interval", default=1.0, type=float,
+              help="Seconds between samples (with --watch).")
+@click.option("--samples", "sample_count", default=0, type=int,
+              help="Number of samples, 0=infinite (with --watch).")
 @click.pass_context
 def evcntr_read(
     ctx: click.Context,
@@ -87,11 +93,27 @@ def evcntr_read(
     count: int,
     clear: bool,
     show_setup: bool,
+    watch: bool,
+    interval: float,
+    sample_count: int,
 ) -> None:
     """Read event counter values."""
     try:
         with SwitchtecDevice.open(device_path) as dev:
-            if show_setup:
+            if watch:
+                json_output = ctx.obj.get("json_output")
+                for sample in dev.monitor.watch_evcntr(
+                    stack, counter, count,
+                    interval=interval, count=sample_count,
+                ):
+                    if json_output:
+                        click.echo(sample.model_dump_json())
+                    else:
+                        click.echo(
+                            f"[{sample.elapsed_s:>8.1f}s] Counter {sample.counter_id}: "
+                            f"{sample.count:>10}  (delta={sample.delta})"
+                        )
+            elif show_setup:
                 values = dev.evcntr.get_both(stack, counter, count, clear=clear)
                 if ctx.obj.get("json_output"):
                     click.echo(json.dumps(
@@ -122,6 +144,8 @@ def evcntr_read(
     except SwitchtecError as e:
         click.echo(f"Error: {e}", err=True)
         raise click.Abort()
+    except KeyboardInterrupt:
+        click.echo("\nMonitoring stopped.")
 
 
 @evcntr_group.command("get-setup")

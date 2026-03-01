@@ -64,9 +64,13 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 
 **Fabric Topology** (PAX devices) -- Port enable/disable/hot-reset, port configuration, GFMS bind/unbind, and event clearing.
 
-**Performance Monitoring** -- Bandwidth counters per port (egress/ingress posted, completion, non-posted) and latency measurement between port pairs.
+**Performance Monitoring** -- Bandwidth counters per port (egress/ingress posted, completion, non-posted), latency measurement between port pairs, and continuous monitoring with `LinkHealthMonitor` for delta-based sampling at configurable intervals.
 
-**Security** -- API key authentication via `SWITCHTEC_API_KEY` environment variable with constant-time comparison (`hmac.compare_digest`), localhost-only binding by default, restricted CORS origins, Pydantic input validation on all API endpoints, firmware upload size limits (64 MB), port/lane ID range validation, rate limiting on destructive endpoints (hard reset, error injection, fabric control), sanitized error messages that never leak internal details, and thread-safe device access with per-device operation locks.
+**Raw MRPC Commands** -- Low-level `mrpc_cmd()` interface for sending arbitrary MRPC commands to switch firmware. Essential for debugging, firmware development, and accessing commands not yet wrapped by the typed API. Payload and response sizes validated against the 1024-byte hardware maximum.
+
+**Public Testing Module** -- `serialcables_switchtec.testing` exports `FakeLibrary`, `create_mock_device()`, and `patch_library()` so validation engineers can write pytest suites without hardware and without copying internal test fixtures.
+
+**Security** -- API key authentication via `SWITCHTEC_API_KEY` environment variable with constant-time comparison (`hmac.compare_digest`), localhost-only binding by default, restricted CORS origins, Pydantic input validation on all API endpoints, firmware upload size limits (64 MB), port/lane ID range validation, rate limiting on destructive endpoints (hard reset, error injection, fabric control, raw MRPC), sanitized error messages that never leak internal details, and thread-safe device access with per-device operation locks.
 
 ---
 
@@ -88,7 +92,7 @@ Each layer has a single responsibility:
 
 - **CLI / UI** -- User-facing interfaces. The CLI outputs human-readable text or JSON. The dashboard renders live charts and tables.
 - **REST API** -- Thread-safe HTTP endpoints with a device registry protected by `threading.Lock`, input validation, rate limiting on destructive operations, sanitized error responses, and shared dependencies centralized in `api/dependencies.py`. Blocking C library calls run in FastAPI's thread pool; long-running operations (firmware write, event wait) use dedicated executors.
-- **Core Domain** -- Business logic classes (`SwitchtecDevice`, `DiagnosticsManager`, `ErrorInjector`, `FirmwareManager`, `EventManager`, `FabricManager`, `PerformanceManager`, `OrderedSetAnalyzer`, `EventCounterManager`) that wrap C library calls and return immutable Pydantic models. Managers are accessible as thread-safe lazy properties on the device (e.g., `dev.diagnostics`, `dev.firmware`, `dev.performance`) with double-checked locking.
+- **Core Domain** -- Business logic classes (`SwitchtecDevice`, `DiagnosticsManager`, `ErrorInjector`, `FirmwareManager`, `EventManager`, `FabricManager`, `PerformanceManager`, `OrderedSetAnalyzer`, `EventCounterManager`, `LinkHealthMonitor`) that wrap C library calls and return immutable Pydantic models. All managers are accessible as thread-safe lazy properties on the device (e.g., `dev.diagnostics`, `dev.injector`, `dev.monitor`, `dev.firmware`, `dev.performance`) with double-checked locking. All C library calls are serialized per-device via `device_op()` context manager.
 - **Bindings** -- Platform-aware CDLL loader, ctypes `Structure` definitions matching C structs (`_pack_ = 1` for MRPC structs), function prototypes with `argtypes`/`restype`, and IntEnum constants from C headers.
 
 ---
@@ -489,6 +493,12 @@ athena fabric clear-events /dev/switchtec0
 # Get bandwidth counters for ports 0, 1, and 4
 athena perf bw /dev/switchtec0 --ports 0,1,4
 
+# Continuous bandwidth monitoring (1 sample/sec, 60 samples)
+athena perf bw /dev/switchtec0 --ports 0,4 --watch --interval 1.0 --count 60
+
+# Infinite monitoring with JSON-lines output (Ctrl+C to stop)
+athena --json-output perf bw /dev/switchtec0 --ports 0,4 --watch
+
 # Configure latency measurement between egress port 0 and ingress port 4
 athena perf latency-setup /dev/switchtec0 --egress 0 --ingress 4
 
@@ -537,8 +547,21 @@ athena evcntr read /dev/switchtec0 --stack 0 --counter 0 --count 4
 # Read with setup info and clear after reading
 athena evcntr read /dev/switchtec0 --stack 0 --counter 0 --show-setup --clear
 
+# Continuous counter monitoring (1 sample/sec, 60 samples)
+athena evcntr read /dev/switchtec0 --stack 0 --counter 0 --watch --interval 1.0 --samples 60
+
 # Show counter setup configuration
 athena evcntr get-setup /dev/switchtec0 --stack 0 --counter 0 --count 4
+```
+
+### Raw MRPC Commands
+
+```bash
+# Send a raw MRPC command (hex command ID, hex payload)
+athena mrpc cmd /dev/switchtec0 0x1 --payload deadbeef --resp-len 64
+
+# JSON output mode
+athena --json-output mrpc cmd /dev/switchtec0 0x1 --resp-len 16
 ```
 
 ### Server Command
@@ -671,6 +694,12 @@ curl -H "X-API-Key: your-secret-key" http://127.0.0.1:8000/api/devices/
 | `GET` | `/api/devices/{id}/evcntr/{stack}/{counter}/counts` | Read counter values |
 | `GET` | `/api/devices/{id}/evcntr/{stack}/{counter}` | Get setup + values |
 
+**Raw MRPC:**
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/devices/{id}/mrpc` | Send raw MRPC command (rate limited) |
+
 All endpoints return JSON. Error responses follow a consistent structure:
 
 ```json
@@ -785,10 +814,9 @@ with SwitchtecDevice.open("/dev/switchtec0") as dev:
 
 ```python
 from serialcables_switchtec.core.device import SwitchtecDevice
-from serialcables_switchtec.core.error_injection import ErrorInjector
 
 with SwitchtecDevice.open("/dev/switchtec0") as dev:
-    injector = ErrorInjector(dev)
+    injector = dev.injector  # Lazy-initialized ErrorInjector
 
     # Enable DLLP CRC error injection on port 0
     injector.inject_dllp_crc(port_id=0, enable=True, rate=1)
@@ -933,6 +961,55 @@ with SwitchtecDevice.open("/dev/switchtec0") as dev:
         print(f"Counter {v.counter_id}: {v.count} ({v.setup})")
 ```
 
+### Raw MRPC Commands
+
+```python
+from serialcables_switchtec.core.device import SwitchtecDevice
+
+with SwitchtecDevice.open("/dev/switchtec0") as dev:
+    # Send a raw MRPC command (payload and response capped at 1024 bytes)
+    response = dev.mrpc_cmd(cmd=0x1, payload=b"\xde\xad\xbe\xef", resp_len=64)
+    print(f"Response ({len(response)} bytes): {response.hex()}")
+```
+
+### Continuous Monitoring
+
+```python
+from serialcables_switchtec.core.device import SwitchtecDevice
+
+with SwitchtecDevice.open("/dev/switchtec0") as dev:
+    monitor = dev.monitor  # Lazy-initialized LinkHealthMonitor
+
+    # Watch bandwidth on ports 0 and 4, 1 sample/sec, 60 samples
+    for sample in monitor.watch_bw([0, 4], interval=1.0, count=60):
+        print(f"Port {sample.port_id}: egress={sample.egress_total} ingress={sample.ingress_total}")
+
+    # Watch event counters (infinite, Ctrl+C to stop)
+    try:
+        for sample in monitor.watch_evcntr(stack_id=0, counter_id=0, nr_counters=4):
+            print(f"Counter {sample.counter_id}: delta={sample.delta}")
+    except KeyboardInterrupt:
+        pass
+```
+
+### Public Testing Module
+
+```python
+from serialcables_switchtec.testing import create_mock_device, reset_rate_limiters
+
+# Create a mock device backed by FakeLibrary (no hardware needed)
+result = create_mock_device()
+dev = result.device
+fake_lib = result.fake_lib
+
+# Configure mock return values
+fake_lib.switchtec_die_temp.return_value = 55.0
+print(f"Temperature: {dev.die_temperature}")
+
+# Reset rate limiters between tests
+reset_rate_limiters()
+```
+
 ### Error Handling
 
 All library errors raise from a single `SwitchtecError` base class. Specific subclasses map to errno values and MRPC return codes from the C library.
@@ -1000,6 +1077,8 @@ src/serialcables_switchtec/
 |   |-- types.py                # ctypes Structure definitions matching C structs
 |   +-- functions.py            # Function prototypes (argtypes/restype)
 |
+|-- testing.py                  # Public testing utilities: FakeLibrary, create_mock_device()
+|
 |-- core/                       # Business logic wrapping C library calls
 |   |-- device.py               # SwitchtecDevice: open/close/list/status/temp + lazy managers
 |   |-- diagnostics.py          # DiagnosticsManager: eye, LTSSM, loopback, pattern, EQ
@@ -1008,6 +1087,7 @@ src/serialcables_switchtec/
 |   |-- firmware.py             # FirmwareManager: version, read, write, toggle, boot-ro
 |   |-- events.py               # EventManager: summary, clear, wait
 |   |-- fabric.py               # FabricManager: port control/config, bind/unbind, events
+|   |-- monitor.py              # LinkHealthMonitor: continuous BW and event counter sampling
 |   |-- osa.py                  # OrderedSetAnalyzer: type/pattern config, capture control
 |   +-- performance.py          # PerformanceManager: bandwidth counters, latency
 |
@@ -1024,12 +1104,13 @@ src/serialcables_switchtec/
 |   |-- main.py                 # Root group (--debug, --json-output, --version), serve
 |   |-- device.py               # list, info, temp, status, hard-reset
 |   |-- diag.py                 # eye, eye-fetch, eye-cancel, ltssm, loopback, patgen, patmon, inject, rcvr, eq, crosshair
-|   |-- evcntr.py               # setup, read, get-setup
+|   |-- evcntr.py               # setup, read (--watch), get-setup
 |   |-- firmware.py             # version, summary, read, write, toggle, boot-ro
 |   |-- events.py               # summary, clear, wait
 |   |-- fabric.py               # port-control, port-config, bind, unbind, clear-events
+|   |-- mrpc.py                 # Raw MRPC command interface
 |   |-- osa.py                  # start, stop, config-type, config-pattern, capture, read, dump-config
-|   +-- perf.py                 # bw, latency-setup, latency
+|   +-- perf.py                 # bw (--watch), latency-setup, latency
 |
 |-- api/                        # FastAPI REST + WebSocket API
 |   |-- app.py                  # Application factory, CORS, lifespan, auth
@@ -1045,6 +1126,7 @@ src/serialcables_switchtec/
 |       |-- firmware.py         # Firmware version, write, toggle, boot-ro, summary
 |       |-- events.py           # Event summary, clear, wait
 |       |-- fabric.py           # Fabric port control/config, bind/unbind, events
+|       |-- mrpc.py             # Raw MRPC command endpoint (rate limited)
 |       |-- osa.py              # OSA start, stop, config, capture, data
 |       +-- performance.py      # Bandwidth and latency endpoints
 |
@@ -1111,7 +1193,24 @@ pytest tests/ -v
 pytest tests/ -v --cov=serialcables_switchtec --cov-report=term-missing
 ```
 
-**Current status:** 836 tests across unit, integration, and end-to-end suites organized by domain (device, diagnostics, firmware, events, fabric, performance, error handlers). Coverage is at 84%. The UI layer requires a NiceGUI runtime and is not covered by automated tests.
+**Current status:** 838 tests across unit, integration, and end-to-end suites organized by domain (device, diagnostics, firmware, events, fabric, performance, error handlers). Coverage is at 84%. The UI layer requires a NiceGUI runtime and is not covered by automated tests.
+
+**Public testing module:** Validation engineers can write pytest suites without hardware by importing `serialcables_switchtec.testing`:
+
+```python
+from serialcables_switchtec.testing import create_mock_device, patch_library, reset_rate_limiters
+
+# In a test: create a mock device with FakeLibrary
+result = create_mock_device()
+dev, fake_lib = result.device, result.fake_lib
+fake_lib.switchtec_die_temp.return_value = 55.0
+assert dev.die_temperature == 55.0
+
+# Or patch the global library singleton via monkeypatch
+def test_something(monkeypatch):
+    fake_lib = patch_library(monkeypatch)
+    # All SwitchtecDevice.open() calls now use fake_lib
+```
 
 ---
 
@@ -1130,6 +1229,7 @@ This project is under active development. The current version is **0.1.0**.
 | Phase 7 | C Library Build System -- MSYS2/MinGW scripts, vendor directory | Complete |
 | Phase 8 | P0 Feature Gaps -- eye fetch, firmware write, performance CLI/API | Complete |
 | Phase 9 | Code Quality -- shared dependencies, input validation, dead code removal | Complete |
+| Phase 10 | Usability -- public testing module, dev.injector/monitor, thread safety, MRPC, continuous monitoring | Complete |
 
 ---
 

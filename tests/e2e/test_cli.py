@@ -39,6 +39,13 @@ def _make_mock_device(**overrides: object) -> MagicMock:
     mock_dev.die_temperature = overrides.get("die_temperature", 45.5)
     mock_dev.__enter__ = MagicMock(return_value=mock_dev)
     mock_dev.__exit__ = MagicMock(return_value=False)
+
+    # Setup lazy property mocks
+    mock_dev.diagnostics = MagicMock()
+    mock_dev.injector = MagicMock()
+    mock_dev.performance = MagicMock()
+    mock_dev.monitor = MagicMock()
+
     return mock_dev
 
 
@@ -472,15 +479,11 @@ class TestDiagCommands:
 
     # ── ltssm ──────────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_ltssm(self, mock_dev_cls, mock_diag_cls):
+    def test_ltssm(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
-
-        mock_diag = MagicMock()
-        mock_diag.ltssm_log.return_value = [_sample_ltssm_entry()]
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.ltssm_log.return_value = [_sample_ltssm_entry()]
 
         runner = CliRunner()
         result = runner.invoke(cli, ["diag", "ltssm", "/dev/switchtec0", "0"])
@@ -488,17 +491,14 @@ class TestDiagCommands:
         assert result.exit_code == 0
         assert "L0 (L0)" in result.output
         assert "100" in result.output  # timestamp
-        mock_diag.ltssm_log.assert_called_once_with(0)
+        mock_dev.diagnostics.ltssm_log.assert_called_once_with(0)
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_ltssm_json(self, mock_dev_cls, mock_diag_cls):
+    def test_ltssm_json(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.ltssm_log.return_value = [_sample_ltssm_entry()]
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.ltssm_log.return_value = [_sample_ltssm_entry()]
 
         runner = CliRunner()
         result = runner.invoke(
@@ -511,15 +511,12 @@ class TestDiagCommands:
         assert parsed[0]["link_state_str"] == "L0 (L0)"
         assert parsed[0]["timestamp"] == 100
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_ltssm_empty(self, mock_dev_cls, mock_diag_cls):
+    def test_ltssm_empty(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.ltssm_log.return_value = []
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.ltssm_log.return_value = []
 
         runner = CliRunner()
         result = runner.invoke(cli, ["diag", "ltssm", "/dev/switchtec0", "0"])
@@ -535,14 +532,12 @@ class TestDiagCommands:
 
     # ── ltssm-clear ────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_ltssm_clear(self, mock_dev_cls, mock_diag_cls):
+    def test_ltssm_clear(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag_cls.return_value = mock_diag
+        # mock_diag setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -551,18 +546,16 @@ class TestDiagCommands:
 
         assert result.exit_code == 0
         assert "cleared" in result.output.lower()
-        mock_diag.ltssm_clear.assert_called_once_with(0)
+        mock_dev.diagnostics.ltssm_clear.assert_called_once_with(0)
 
     # ── loopback ───────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_loopback_enable(self, mock_dev_cls, mock_diag_cls):
+    def test_loopback_enable(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag_cls.return_value = mock_diag
+        # mock_diag setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -573,16 +566,14 @@ class TestDiagCommands:
 
         assert result.exit_code == 0
         assert "enabled" in result.output.lower()
-        mock_diag.loopback_set.assert_called_once()
+        mock_dev.diagnostics.loopback_set.assert_called_once()
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_loopback_disable(self, mock_dev_cls, mock_diag_cls):
+    def test_loopback_disable(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag_cls.return_value = mock_diag
+        # mock_diag setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -592,19 +583,17 @@ class TestDiagCommands:
 
         assert result.exit_code == 0
         assert "disabled" in result.output.lower()
-        mock_diag.loopback_set.assert_called_once()
+        mock_dev.diagnostics.loopback_set.assert_called_once()
         # Verify enable=False was passed
-        call_kwargs = mock_diag.loopback_set.call_args
+        call_kwargs = mock_dev.diagnostics.loopback_set.call_args
         assert call_kwargs[1].get("enable") is False or call_kwargs[0][1] is False
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_loopback_default_speed(self, mock_dev_cls, mock_diag_cls):
+    def test_loopback_default_speed(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag_cls.return_value = mock_diag
+        # mock_diag setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -612,18 +601,16 @@ class TestDiagCommands:
         )
 
         assert result.exit_code == 0
-        mock_diag.loopback_set.assert_called_once()
+        mock_dev.diagnostics.loopback_set.assert_called_once()
 
     # ── patgen ─────────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_patgen(self, mock_dev_cls, mock_diag_cls):
+    def test_patgen(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag_cls.return_value = mock_diag
+        # mock_diag setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -635,16 +622,14 @@ class TestDiagCommands:
         assert result.exit_code == 0
         assert "prbs31" in result.output.lower()
         assert "gen4" in result.output.lower()
-        mock_diag.pattern_gen_set.assert_called_once()
+        mock_dev.diagnostics.pattern_gen_set.assert_called_once()
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_patgen_prbs7(self, mock_dev_cls, mock_diag_cls):
+    def test_patgen_prbs7(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag_cls.return_value = mock_diag
+        # mock_diag setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -655,19 +640,16 @@ class TestDiagCommands:
 
         assert result.exit_code == 0
         assert "prbs7" in result.output.lower()
-        mock_diag.pattern_gen_set.assert_called_once()
+        mock_dev.diagnostics.pattern_gen_set.assert_called_once()
 
     # ── patmon ─────────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_patmon(self, mock_dev_cls, mock_diag_cls):
+    def test_patmon(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.pattern_mon_get.return_value = _sample_pattern_mon_result()
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.pattern_mon_get.return_value = _sample_pattern_mon_result()
 
         runner = CliRunner()
         result = runner.invoke(
@@ -676,17 +658,14 @@ class TestDiagCommands:
 
         assert result.exit_code == 0
         assert "42" in result.output  # error_count
-        mock_diag.pattern_mon_get.assert_called_once_with(0, 0)
+        mock_dev.diagnostics.pattern_mon_get.assert_called_once_with(0, 0)
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_patmon_json(self, mock_dev_cls, mock_diag_cls):
+    def test_patmon_json(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.pattern_mon_get.return_value = _sample_pattern_mon_result()
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.pattern_mon_get.return_value = _sample_pattern_mon_result()
 
         runner = CliRunner()
         result = runner.invoke(
@@ -700,15 +679,12 @@ class TestDiagCommands:
 
     # ── rcvr ───────────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_rcvr(self, mock_dev_cls, mock_diag_cls):
+    def test_rcvr(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.rcvr_obj.return_value = _sample_receiver_object()
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.rcvr_obj.return_value = _sample_receiver_object()
 
         runner = CliRunner()
         result = runner.invoke(
@@ -719,17 +695,14 @@ class TestDiagCommands:
         assert "CTLE" in result.output
         assert "5" in result.output  # ctle value
         assert "120" in result.output  # target_amplitude
-        mock_diag.rcvr_obj.assert_called_once()
+        mock_dev.diagnostics.rcvr_obj.assert_called_once()
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_rcvr_json(self, mock_dev_cls, mock_diag_cls):
+    def test_rcvr_json(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.rcvr_obj.return_value = _sample_receiver_object()
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.rcvr_obj.return_value = _sample_receiver_object()
 
         runner = CliRunner()
         result = runner.invoke(
@@ -741,15 +714,12 @@ class TestDiagCommands:
         assert parsed["ctle"] == 5
         assert parsed["target_amplitude"] == 120
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_rcvr_previous_link(self, mock_dev_cls, mock_diag_cls):
+    def test_rcvr_previous_link(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.rcvr_obj.return_value = _sample_receiver_object()
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.rcvr_obj.return_value = _sample_receiver_object()
 
         runner = CliRunner()
         result = runner.invoke(
@@ -759,19 +729,16 @@ class TestDiagCommands:
         )
 
         assert result.exit_code == 0
-        mock_diag.rcvr_obj.assert_called_once()
+        mock_dev.diagnostics.rcvr_obj.assert_called_once()
 
     # ── eq ─────────────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_eq(self, mock_dev_cls, mock_diag_cls):
+    def test_eq(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.port_eq_tx_coeff.return_value = _sample_port_eq_coeff()
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.port_eq_tx_coeff.return_value = _sample_port_eq_coeff()
 
         runner = CliRunner()
         result = runner.invoke(
@@ -782,17 +749,14 @@ class TestDiagCommands:
         assert "Lane count: 2" in result.output
         assert "pre=" in result.output
         assert "post=" in result.output
-        mock_diag.port_eq_tx_coeff.assert_called_once()
+        mock_dev.diagnostics.port_eq_tx_coeff.assert_called_once()
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_eq_json(self, mock_dev_cls, mock_diag_cls):
+    def test_eq_json(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.port_eq_tx_coeff.return_value = _sample_port_eq_coeff()
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.port_eq_tx_coeff.return_value = _sample_port_eq_coeff()
 
         runner = CliRunner()
         result = runner.invoke(
@@ -805,15 +769,12 @@ class TestDiagCommands:
         assert len(parsed["cursors"]) == 2
         assert parsed["cursors"][0]["pre"] == -6
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_eq_far_end(self, mock_dev_cls, mock_diag_cls):
+    def test_eq_far_end(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.port_eq_tx_coeff.return_value = _sample_port_eq_coeff()
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.port_eq_tx_coeff.return_value = _sample_port_eq_coeff()
 
         runner = CliRunner()
         result = runner.invoke(
@@ -823,18 +784,16 @@ class TestDiagCommands:
         )
 
         assert result.exit_code == 0
-        mock_diag.port_eq_tx_coeff.assert_called_once()
+        mock_dev.diagnostics.port_eq_tx_coeff.assert_called_once()
 
     # ── crosshair ──────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_crosshair_enable(self, mock_dev_cls, mock_diag_cls):
+    def test_crosshair_enable(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag_cls.return_value = mock_diag
+        # mock_diag setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -845,16 +804,14 @@ class TestDiagCommands:
 
         assert result.exit_code == 0
         assert "enabled" in result.output.lower()
-        mock_diag.cross_hair_enable.assert_called_once_with(0)
+        mock_dev.diagnostics.cross_hair_enable.assert_called_once_with(0)
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_crosshair_disable(self, mock_dev_cls, mock_diag_cls):
+    def test_crosshair_disable(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag_cls.return_value = mock_diag
+        # mock_diag setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -864,18 +821,15 @@ class TestDiagCommands:
 
         assert result.exit_code == 0
         assert "disabled" in result.output.lower()
-        mock_diag.cross_hair_disable.assert_called_once()
+        mock_dev.diagnostics.cross_hair_disable.assert_called_once()
 
     @patch("serialcables_switchtec.bindings.constants.DIAG_CROSS_HAIR_MAX_LANES", 64)
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_crosshair_get(self, mock_dev_cls, mock_diag_cls):
+    def test_crosshair_get(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.cross_hair_get.return_value = [_sample_crosshair_result()]
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.cross_hair_get.return_value = [_sample_crosshair_result()]
 
         runner = CliRunner()
         result = runner.invoke(
@@ -886,18 +840,15 @@ class TestDiagCommands:
 
         assert result.exit_code == 0
         assert "DONE" in result.output
-        mock_diag.cross_hair_get.assert_called_once_with(0, 1)
+        mock_dev.diagnostics.cross_hair_get.assert_called_once_with(0, 1)
 
     @patch("serialcables_switchtec.bindings.constants.DIAG_CROSS_HAIR_MAX_LANES", 64)
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_crosshair_get_all_lanes(self, mock_dev_cls, mock_diag_cls):
+    def test_crosshair_get_all_lanes(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.cross_hair_get.return_value = [_sample_crosshair_result()]
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.cross_hair_get.return_value = [_sample_crosshair_result()]
 
         runner = CliRunner()
         # Default --lane is -1 which means all lanes
@@ -907,18 +858,15 @@ class TestDiagCommands:
         )
 
         assert result.exit_code == 0
-        mock_diag.cross_hair_get.assert_called_once_with(0, 64)
+        mock_dev.diagnostics.cross_hair_get.assert_called_once_with(0, 64)
 
     @patch("serialcables_switchtec.bindings.constants.DIAG_CROSS_HAIR_MAX_LANES", 64)
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_crosshair_get_json(self, mock_dev_cls, mock_diag_cls):
+    def test_crosshair_get_json(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.cross_hair_get.return_value = [_sample_crosshair_result()]
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.cross_hair_get.return_value = [_sample_crosshair_result()]
 
         runner = CliRunner()
         result = runner.invoke(
@@ -935,14 +883,12 @@ class TestDiagCommands:
 
     # ── eye ────────────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_eye(self, mock_dev_cls, mock_diag_cls):
+    def test_eye(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag_cls.return_value = mock_diag
+        # mock_diag setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -953,22 +899,20 @@ class TestDiagCommands:
 
         assert result.exit_code == 0
         assert "started" in result.output.lower()
-        mock_diag.eye_start.assert_called_once()
+        mock_dev.diagnostics.eye_start.assert_called_once()
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_eye_default_lanes(self, mock_dev_cls, mock_diag_cls):
+    def test_eye_default_lanes(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag_cls.return_value = mock_diag
+        # mock_diag setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(cli, ["diag", "eye", "/dev/switchtec0"])
 
         assert result.exit_code == 0
-        mock_diag.eye_start.assert_called_once()
+        mock_dev.diagnostics.eye_start.assert_called_once()
 
     # ── diag error handling ────────────────────────────────────────────
 
@@ -995,14 +939,12 @@ class TestInjectCommands:
 
     # ── inject dllp ────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_dllp(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_dllp(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj_cls.return_value = mock_inj
+        # mock_inj setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1013,18 +955,16 @@ class TestInjectCommands:
 
         assert result.exit_code == 0
         assert "injected" in result.output.lower()
-        mock_inj.inject_dllp.assert_called_once_with(0, 57005)
+        mock_dev.injector.inject_dllp.assert_called_once_with(0, 57005)
 
     # ── inject dllp-crc ───────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_dllp_crc_enable(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_dllp_crc_enable(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj_cls.return_value = mock_inj
+        # mock_inj setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1034,16 +974,14 @@ class TestInjectCommands:
 
         assert result.exit_code == 0
         assert "enabled" in result.output.lower()
-        mock_inj.inject_dllp_crc.assert_called_once_with(0, True, 1)
+        mock_dev.injector.inject_dllp_crc.assert_called_once_with(0, True, 1)
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_dllp_crc_disable(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_dllp_crc_disable(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj_cls.return_value = mock_inj
+        # mock_inj setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1053,16 +991,14 @@ class TestInjectCommands:
 
         assert result.exit_code == 0
         assert "disabled" in result.output.lower()
-        mock_inj.inject_dllp_crc.assert_called_once_with(0, False, 1)
+        mock_dev.injector.inject_dllp_crc.assert_called_once_with(0, False, 1)
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_dllp_crc_custom_rate(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_dllp_crc_custom_rate(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj_cls.return_value = mock_inj
+        # mock_inj setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1072,18 +1008,16 @@ class TestInjectCommands:
         )
 
         assert result.exit_code == 0
-        mock_inj.inject_dllp_crc.assert_called_once_with(0, True, 100)
+        mock_dev.injector.inject_dllp_crc.assert_called_once_with(0, True, 100)
 
     # ── inject tlp-lcrc ───────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_tlp_lcrc_enable(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_tlp_lcrc_enable(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj_cls.return_value = mock_inj
+        # mock_inj setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1093,16 +1027,14 @@ class TestInjectCommands:
 
         assert result.exit_code == 0
         assert "enabled" in result.output.lower()
-        mock_inj.inject_tlp_lcrc.assert_called_once_with(0, True, 1)
+        mock_dev.injector.inject_tlp_lcrc.assert_called_once_with(0, True, 1)
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_tlp_lcrc_disable(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_tlp_lcrc_disable(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj_cls.return_value = mock_inj
+        # mock_inj setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1112,18 +1044,16 @@ class TestInjectCommands:
 
         assert result.exit_code == 0
         assert "disabled" in result.output.lower()
-        mock_inj.inject_tlp_lcrc.assert_called_once_with(0, False, 1)
+        mock_dev.injector.inject_tlp_lcrc.assert_called_once_with(0, False, 1)
 
     # ── inject seq-num ─────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_seq_num(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_seq_num(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj_cls.return_value = mock_inj
+        # mock_inj setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1133,18 +1063,16 @@ class TestInjectCommands:
 
         assert result.exit_code == 0
         assert "injected" in result.output.lower()
-        mock_inj.inject_tlp_seq_num.assert_called_once_with(0)
+        mock_dev.injector.inject_tlp_seq_num.assert_called_once_with(0)
 
     # ── inject ack-nack ────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_ack_nack(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_ack_nack(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj_cls.return_value = mock_inj
+        # mock_inj setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1155,16 +1083,14 @@ class TestInjectCommands:
 
         assert result.exit_code == 0
         assert "injected" in result.output.lower()
-        mock_inj.inject_ack_nack.assert_called_once_with(0, 42, 3)
+        mock_dev.injector.inject_ack_nack.assert_called_once_with(0, 42, 3)
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_ack_nack_default_count(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_ack_nack_default_count(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj_cls.return_value = mock_inj
+        # mock_inj setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1174,18 +1100,16 @@ class TestInjectCommands:
         )
 
         assert result.exit_code == 0
-        mock_inj.inject_ack_nack.assert_called_once_with(0, 10, 1)
+        mock_dev.injector.inject_ack_nack.assert_called_once_with(0, 10, 1)
 
     # ── inject cto ─────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_cto(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_cto(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj_cls.return_value = mock_inj
+        # mock_inj setup handled via device property
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1195,7 +1119,7 @@ class TestInjectCommands:
 
         assert result.exit_code == 0
         assert "injected" in result.output.lower()
-        mock_inj.inject_cto.assert_called_once_with(0)
+        mock_dev.injector.inject_cto.assert_called_once_with(0)
 
     # ── inject error handling ──────────────────────────────────────────
 
@@ -1212,15 +1136,12 @@ class TestInjectCommands:
         assert result.exit_code != 0
         assert "access refused" in result.output
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_dllp_injector_error(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_dllp_injector_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj.inject_dllp.side_effect = SwitchtecError("inject failed")
-        mock_inj_cls.return_value = mock_inj
+        mock_dev.injector.inject_dllp.side_effect = SwitchtecError("inject failed")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1419,15 +1340,12 @@ class TestDiagErrorPaths:
 
     # ── eye error ─────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_eye_error(self, mock_dev_cls, mock_diag_cls):
+    def test_eye_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.eye_start.side_effect = SwitchtecError("eye capture failed")
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.eye_start.side_effect = SwitchtecError("eye capture failed")
 
         runner = CliRunner()
         result = runner.invoke(cli, ["diag", "eye", "/dev/switchtec0"])
@@ -1437,15 +1355,12 @@ class TestDiagErrorPaths:
 
     # ── ltssm-clear error ─────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_ltssm_clear_error(self, mock_dev_cls, mock_diag_cls):
+    def test_ltssm_clear_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.ltssm_clear.side_effect = SwitchtecError("clear failed")
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.ltssm_clear.side_effect = SwitchtecError("clear failed")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1457,15 +1372,12 @@ class TestDiagErrorPaths:
 
     # ── loopback error ────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_loopback_error(self, mock_dev_cls, mock_diag_cls):
+    def test_loopback_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.loopback_set.side_effect = SwitchtecError("loopback failed")
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.loopback_set.side_effect = SwitchtecError("loopback failed")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1477,15 +1389,12 @@ class TestDiagErrorPaths:
 
     # ── patgen error ──────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_patgen_error(self, mock_dev_cls, mock_diag_cls):
+    def test_patgen_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.pattern_gen_set.side_effect = SwitchtecError("patgen failed")
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.pattern_gen_set.side_effect = SwitchtecError("patgen failed")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1499,15 +1408,12 @@ class TestDiagErrorPaths:
 
     # ── patmon error ──────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_patmon_error(self, mock_dev_cls, mock_diag_cls):
+    def test_patmon_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.pattern_mon_get.side_effect = SwitchtecError("patmon failed")
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.pattern_mon_get.side_effect = SwitchtecError("patmon failed")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1519,15 +1425,12 @@ class TestDiagErrorPaths:
 
     # ── rcvr error ────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_rcvr_error(self, mock_dev_cls, mock_diag_cls):
+    def test_rcvr_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.rcvr_obj.side_effect = SwitchtecError("rcvr failed")
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.rcvr_obj.side_effect = SwitchtecError("rcvr failed")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1539,15 +1442,12 @@ class TestDiagErrorPaths:
 
     # ── eq error ──────────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_eq_error(self, mock_dev_cls, mock_diag_cls):
+    def test_eq_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.port_eq_tx_coeff.side_effect = SwitchtecError("eq failed")
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.port_eq_tx_coeff.side_effect = SwitchtecError("eq failed")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1559,15 +1459,12 @@ class TestDiagErrorPaths:
 
     # ── crosshair error ───────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_crosshair_error(self, mock_dev_cls, mock_diag_cls):
+    def test_crosshair_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_diag = MagicMock()
-        mock_diag.cross_hair_enable.side_effect = SwitchtecError("crosshair failed")
-        mock_diag_cls.return_value = mock_diag
+        mock_dev.diagnostics.cross_hair_enable.side_effect = SwitchtecError("crosshair failed")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1590,15 +1487,12 @@ class TestInjectErrorPaths:
 
     # ── dllp-crc error ────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_dllp_crc_error(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_dllp_crc_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj.inject_dllp_crc.side_effect = SwitchtecError("dllp crc failed")
-        mock_inj_cls.return_value = mock_inj
+        mock_dev.injector.inject_dllp_crc.side_effect = SwitchtecError("dllp crc failed")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1611,15 +1505,12 @@ class TestInjectErrorPaths:
 
     # ── tlp-lcrc error ────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_tlp_lcrc_error(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_tlp_lcrc_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj.inject_tlp_lcrc.side_effect = SwitchtecError("tlp lcrc failed")
-        mock_inj_cls.return_value = mock_inj
+        mock_dev.injector.inject_tlp_lcrc.side_effect = SwitchtecError("tlp lcrc failed")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1632,15 +1523,12 @@ class TestInjectErrorPaths:
 
     # ── seq-num error ─────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_seq_num_error(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_seq_num_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj.inject_tlp_seq_num.side_effect = SwitchtecError("seq num failed")
-        mock_inj_cls.return_value = mock_inj
+        mock_dev.injector.inject_tlp_seq_num.side_effect = SwitchtecError("seq num failed")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1653,15 +1541,12 @@ class TestInjectErrorPaths:
 
     # ── ack-nack error ────────────────────────────────────────────────
 
-    @patch("serialcables_switchtec.cli.diag.ErrorInjector")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_inject_ack_nack_error(self, mock_dev_cls, mock_inj_cls):
+    def test_inject_ack_nack_error(self, mock_dev_cls):
         mock_dev = _make_mock_device()
         mock_dev_cls.open.return_value = mock_dev
 
-        mock_inj = MagicMock()
-        mock_inj.inject_ack_nack.side_effect = SwitchtecError("ack nack failed")
-        mock_inj_cls.return_value = mock_inj
+        mock_dev.injector.inject_ack_nack.side_effect = SwitchtecError("ack nack failed")
 
         runner = CliRunner()
         result = runner.invoke(

@@ -59,9 +59,10 @@ class EventCounterManager:
         setup.egress = int(egress)
         setup.threshold = threshold
 
-        ret = self._dev.lib.switchtec_evcntr_setup(
-            self._dev.handle, stack_id, counter_id, ctypes.byref(setup),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_evcntr_setup(
+                self._dev.handle, stack_id, counter_id, ctypes.byref(setup),
+            )
         check_error(ret, "evcntr_setup")
         logger.info(
             "evcntr_setup",
@@ -84,9 +85,10 @@ class EventCounterManager:
         """
         self._validate_counter_range(counter_id, nr_counters)
         setups = (SwitchtecEvCntrSetup * nr_counters)()
-        ret = self._dev.lib.switchtec_evcntr_get_setup(
-            self._dev.handle, stack_id, counter_id, nr_counters, setups,
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_evcntr_get_setup(
+                self._dev.handle, stack_id, counter_id, nr_counters, setups,
+            )
         check_error(ret, "evcntr_get_setup")
         return [
             EvCntrSetupResult(
@@ -119,10 +121,11 @@ class EventCounterManager:
         """
         self._validate_counter_range(counter_id, nr_counters)
         counts = (ctypes.c_uint * nr_counters)()
-        ret = self._dev.lib.switchtec_evcntr_get(
-            self._dev.handle, stack_id, counter_id, nr_counters,
-            counts, int(clear),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_evcntr_get(
+                self._dev.handle, stack_id, counter_id, nr_counters,
+                counts, int(clear),
+            )
         check_error(ret, "evcntr_get")
         return [counts[i] for i in range(nr_counters)]
 
@@ -148,10 +151,11 @@ class EventCounterManager:
         self._validate_counter_range(counter_id, nr_counters)
         setups = (SwitchtecEvCntrSetup * nr_counters)()
         counts = (ctypes.c_uint * nr_counters)()
-        ret = self._dev.lib.switchtec_evcntr_get_both(
-            self._dev.handle, stack_id, counter_id, nr_counters,
-            setups, counts, int(clear),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_evcntr_get_both(
+                self._dev.handle, stack_id, counter_id, nr_counters,
+                setups, counts, int(clear),
+            )
         check_error(ret, "evcntr_get_both")
         return [
             EvCntrValue(
@@ -176,6 +180,9 @@ class EventCounterManager:
         Returns:
             Return code from the wait operation.
         """
+        # NOTE: Intentionally does NOT acquire device_op().
+        # This is a blocking call (default 5s timeout) that would
+        # starve other threads if the lock were held.
         ret = self._dev.lib.switchtec_evcntr_wait(self._dev.handle, timeout_ms)
         check_error(ret, "evcntr_wait")
         return ret

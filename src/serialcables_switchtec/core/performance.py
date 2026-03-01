@@ -40,9 +40,10 @@ class PerformanceManager:
         port_ids_arr = (c_int * nr_ports)(*phys_port_ids)
         res_arr = (SwitchtecBwCntrRes * nr_ports)()
 
-        ret = self._dev.lib.switchtec_bwcntr_many(
-            self._dev.handle, nr_ports, port_ids_arr, int(clear), res_arr
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_bwcntr_many(
+                self._dev.handle, nr_ports, port_ids_arr, int(clear), res_arr
+            )
         check_error(ret, "bwcntr_many")
 
         results: list[BwCounterResult] = []
@@ -67,9 +68,10 @@ class PerformanceManager:
         self, egress_port_id: int, ingress_port_id: int, clear: bool = False
     ) -> None:
         """Configure latency measurement between two ports."""
-        ret = self._dev.lib.switchtec_lat_setup(
-            self._dev.handle, egress_port_id, ingress_port_id, int(clear)
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_lat_setup(
+                self._dev.handle, egress_port_id, ingress_port_id, int(clear)
+            )
         check_error(ret, "lat_setup")
 
     def lat_get(
@@ -87,10 +89,11 @@ class PerformanceManager:
         cur_ns = c_int()
         max_ns = c_int()
 
-        ret = self._dev.lib.switchtec_lat_get(
-            self._dev.handle, int(clear), egress_port_id,
-            ctypes.byref(cur_ns), ctypes.byref(max_ns),
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_lat_get(
+                self._dev.handle, int(clear), egress_port_id,
+                ctypes.byref(cur_ns), ctypes.byref(max_ns),
+            )
         check_error(ret, "lat_get")
 
         return LatencyResult(

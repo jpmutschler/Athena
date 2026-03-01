@@ -26,9 +26,10 @@ class ErrorInjector:
             phys_port_id: Physical port ID.
             data: DLLP data to inject.
         """
-        ret = self._dev.lib.switchtec_inject_err_dllp(
-            self._dev.handle, phys_port_id, data
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_inject_err_dllp(
+                self._dev.handle, phys_port_id, data
+            )
         check_error(ret, "inject_dllp")
         logger.info("dllp_injected", port=phys_port_id, data=data)
 
@@ -42,9 +43,10 @@ class ErrorInjector:
             enable: True to enable, False to disable.
             rate: Injection rate.
         """
-        ret = self._dev.lib.switchtec_inject_err_dllp_crc(
-            self._dev.handle, phys_port_id, int(enable), rate
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_inject_err_dllp_crc(
+                self._dev.handle, phys_port_id, int(enable), rate
+            )
         check_error(ret, "inject_dllp_crc")
         logger.info(
             "dllp_crc_injection",
@@ -61,9 +63,10 @@ class ErrorInjector:
             enable: True to enable, False to disable.
             rate: Injection rate.
         """
-        ret = self._dev.lib.switchtec_inject_err_tlp_lcrc(
-            self._dev.handle, phys_port_id, int(enable), rate
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_inject_err_tlp_lcrc(
+                self._dev.handle, phys_port_id, int(enable), rate
+            )
         check_error(ret, "inject_tlp_lcrc")
         logger.info(
             "tlp_lcrc_injection",
@@ -76,9 +79,10 @@ class ErrorInjector:
         Args:
             phys_port_id: Physical port ID.
         """
-        ret = self._dev.lib.switchtec_inject_err_tlp_seq_num(
-            self._dev.handle, phys_port_id
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_inject_err_tlp_seq_num(
+                self._dev.handle, phys_port_id
+            )
         check_error(ret, "inject_tlp_seq_num")
         logger.info("tlp_seq_num_injected", port=phys_port_id)
 
@@ -92,9 +96,10 @@ class ErrorInjector:
             seq_num: Sequence number.
             count: Number of errors to inject.
         """
-        ret = self._dev.lib.switchtec_inject_err_ack_nack(
-            self._dev.handle, phys_port_id, seq_num, count
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_inject_err_ack_nack(
+                self._dev.handle, phys_port_id, seq_num, count
+            )
         check_error(ret, "inject_ack_nack")
         logger.info(
             "ack_nack_injected",
@@ -107,8 +112,9 @@ class ErrorInjector:
         Args:
             phys_port_id: Physical port ID.
         """
-        ret = self._dev.lib.switchtec_inject_err_cto(
-            self._dev.handle, phys_port_id
-        )
+        with self._dev.device_op():
+            ret = self._dev.lib.switchtec_inject_err_cto(
+                self._dev.handle, phys_port_id
+            )
         check_error(ret, "inject_cto")
         logger.info("cto_injected", port=phys_port_id)

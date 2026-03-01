@@ -26,6 +26,13 @@ def _make_mock_device(**overrides: object) -> MagicMock:
     mock_dev.name = overrides.get("name", "switchtec0")
     mock_dev.__enter__ = MagicMock(return_value=mock_dev)
     mock_dev.__exit__ = MagicMock(return_value=False)
+
+    # Setup lazy property mocks
+    mock_dev.diagnostics = MagicMock()
+    mock_dev.injector = MagicMock()
+    mock_dev.performance = MagicMock()
+    mock_dev.monitor = MagicMock()
+
     return mock_dev
 
 
@@ -100,21 +107,18 @@ class TestPhase8Help:
 class TestPerfBwE2E:
     """End-to-end tests for perf bw command."""
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_bw_table_output(self, mock_cls, mock_perf_cls) -> None:
+    def test_bw_table_output(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.bw_get.return_value = [
+        mock_dev.performance.bw_get.return_value = [
             BwCounterResult(
                 time_us=5000,
                 egress=BwCounterDirection(posted=1000, comp=2000, nonposted=500),
                 ingress=BwCounterDirection(posted=1500, comp=2500, nonposted=750),
             ),
         ]
-        mock_perf_cls.return_value = mock_mgr
 
         runner = CliRunner()
         result = runner.invoke(
@@ -128,21 +132,18 @@ class TestPerfBwE2E:
         assert "comp=2000" in result.output
         assert "nonposted=500" in result.output
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_bw_json_output(self, mock_cls, mock_perf_cls) -> None:
+    def test_bw_json_output(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.bw_get.return_value = [
+        mock_dev.performance.bw_get.return_value = [
             BwCounterResult(
                 time_us=3000,
                 egress=BwCounterDirection(posted=10, comp=20, nonposted=5),
                 ingress=BwCounterDirection(posted=15, comp=25, nonposted=7),
             ),
         ]
-        mock_perf_cls.return_value = mock_mgr
 
         runner = CliRunner()
         result = runner.invoke(
@@ -176,14 +177,10 @@ class TestPerfBwE2E:
 class TestPerfLatencySetupE2E:
     """End-to-end tests for perf latency-setup command."""
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_latency_setup_output(self, mock_cls, mock_perf_cls) -> None:
+    def test_latency_setup_output(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
-
-        mock_mgr = MagicMock()
-        mock_perf_cls.return_value = mock_mgr
 
         runner = CliRunner()
         result = runner.invoke(
@@ -199,15 +196,12 @@ class TestPerfLatencySetupE2E:
         assert "egress=3" in result.output
         assert "ingress=7" in result.output
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_latency_setup_error(self, mock_cls, mock_perf_cls) -> None:
+    def test_latency_setup_error(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.lat_setup.side_effect = SwitchtecError("invalid port combination")
-        mock_perf_cls.return_value = mock_mgr
+        mock_dev.performance.lat_setup.side_effect = SwitchtecError("invalid port combination")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -230,19 +224,16 @@ class TestPerfLatencySetupE2E:
 class TestPerfLatencyE2E:
     """End-to-end tests for perf latency command."""
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_latency_table_output(self, mock_cls, mock_perf_cls) -> None:
+    def test_latency_table_output(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.lat_get.return_value = LatencyResult(
+        mock_dev.performance.lat_get.return_value = LatencyResult(
             egress_port_id=2,
             current_ns=55,
             max_ns=200,
         )
-        mock_perf_cls.return_value = mock_mgr
 
         runner = CliRunner()
         result = runner.invoke(
@@ -254,19 +245,16 @@ class TestPerfLatencyE2E:
         assert "current=55" in result.output
         assert "max=200" in result.output
 
-    @patch("serialcables_switchtec.cli.perf.PerformanceManager")
     @patch("serialcables_switchtec.cli.perf.SwitchtecDevice")
-    def test_latency_json_output(self, mock_cls, mock_perf_cls) -> None:
+    def test_latency_json_output(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.lat_get.return_value = LatencyResult(
+        mock_dev.performance.lat_get.return_value = LatencyResult(
             egress_port_id=4,
             current_ns=99,
             max_ns=300,
         )
-        mock_perf_cls.return_value = mock_mgr
 
         runner = CliRunner()
         result = runner.invoke(
@@ -289,9 +277,8 @@ class TestPerfLatencyE2E:
 class TestDiagEyeFetchE2E:
     """End-to-end tests for diag eye-fetch command."""
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_eye_fetch_text_output(self, mock_cls, mock_diag_cls) -> None:
+    def test_eye_fetch_text_output(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
@@ -303,9 +290,7 @@ class TestDiagEyeFetchE2E:
             "pixels": [0.0] * 100 + [1.0] * 50,
         })
 
-        mock_mgr = MagicMock()
-        mock_mgr.eye_fetch.return_value = mock_result
-        mock_diag_cls.return_value = mock_mgr
+        mock_dev.diagnostics.eye_fetch.return_value = mock_result
 
         runner = CliRunner()
         result = runner.invoke(
@@ -316,17 +301,14 @@ class TestDiagEyeFetchE2E:
         assert "Lane: 0" in result.output
         assert "Pixels fetched: 150" in result.output
         assert "Non-zero pixels: 50" in result.output
-        mock_mgr.eye_fetch.assert_called_once_with(150)
+        mock_dev.diagnostics.eye_fetch.assert_called_once_with(150)
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_eye_fetch_error(self, mock_cls, mock_diag_cls) -> None:
+    def test_eye_fetch_error(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.eye_fetch.side_effect = SwitchtecError("no capture in progress")
-        mock_diag_cls.return_value = mock_mgr
+        mock_dev.diagnostics.eye_fetch.side_effect = SwitchtecError("no capture in progress")
 
         runner = CliRunner()
         result = runner.invoke(
@@ -345,14 +327,10 @@ class TestDiagEyeFetchE2E:
 class TestDiagEyeCancelE2E:
     """End-to-end tests for diag eye-cancel command."""
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_eye_cancel_success(self, mock_cls, mock_diag_cls) -> None:
+    def test_eye_cancel_success(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
-
-        mock_mgr = MagicMock()
-        mock_diag_cls.return_value = mock_mgr
 
         runner = CliRunner()
         result = runner.invoke(
@@ -361,17 +339,14 @@ class TestDiagEyeCancelE2E:
 
         assert result.exit_code == 0
         assert "cancelled" in result.output.lower()
-        mock_mgr.eye_cancel.assert_called_once()
+        mock_dev.diagnostics.eye_cancel.assert_called_once()
 
-    @patch("serialcables_switchtec.cli.diag.DiagnosticsManager")
     @patch("serialcables_switchtec.cli.diag.SwitchtecDevice")
-    def test_eye_cancel_error(self, mock_cls, mock_diag_cls) -> None:
+    def test_eye_cancel_error(self, mock_cls) -> None:
         mock_dev = _make_mock_device()
         mock_cls.open.return_value = mock_dev
 
-        mock_mgr = MagicMock()
-        mock_mgr.eye_cancel.side_effect = SwitchtecError("cancel failed")
-        mock_diag_cls.return_value = mock_mgr
+        mock_dev.diagnostics.eye_cancel.side_effect = SwitchtecError("cancel failed")
 
         runner = CliRunner()
         result = runner.invoke(

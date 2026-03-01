@@ -49,6 +49,7 @@ from serialcables_switchtec.cli.evcntr import evcntr_group  # noqa: E402
 from serialcables_switchtec.cli.events import events_group  # noqa: E402
 from serialcables_switchtec.cli.fabric import fabric_group  # noqa: E402
 from serialcables_switchtec.cli.firmware import fw_group  # noqa: E402
+from serialcables_switchtec.cli.mrpc import mrpc_group  # noqa: E402
 from serialcables_switchtec.cli.osa import osa_group  # noqa: E402
 from serialcables_switchtec.cli.perf import perf_group  # noqa: E402
 
@@ -58,6 +59,7 @@ cli.add_command(evcntr_group)
 cli.add_command(events_group)
 cli.add_command(fabric_group)
 cli.add_command(fw_group)
+cli.add_command(mrpc_group)
 cli.add_command(osa_group)
 cli.add_command(perf_group)
 
