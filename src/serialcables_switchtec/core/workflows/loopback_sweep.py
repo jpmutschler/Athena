@@ -74,6 +74,16 @@ class LoopbackSweep(Recipe):
         pattern_count = len(_GEN_PATTERNS.get(gen, {}))
         return (pattern_count * dur) + 10
 
+    def cleanup(self, dev: SwitchtecDevice, **kwargs: object) -> None:
+        port_id = int(kwargs.get("port_id", 0))
+        gen = str(kwargs.get("gen", "gen4"))
+        disabled_val = _GEN_DISABLED.get(gen, 6)
+        try:
+            dev.diagnostics.pattern_gen_set(port_id, disabled_val, DiagPatternLinkRate.DISABLED)
+        except SwitchtecError:
+            pass
+        _cleanup_loopback(dev, port_id)
+
     def run(
         self,
         dev: SwitchtecDevice,

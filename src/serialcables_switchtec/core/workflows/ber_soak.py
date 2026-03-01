@@ -74,6 +74,11 @@ class BerSoak(Recipe):
     def estimated_duration_s(self, **kwargs: object) -> float:
         return float(kwargs.get("duration_s", _DEFAULT_DURATION)) + 5
 
+    def cleanup(self, dev: SwitchtecDevice, **kwargs: object) -> None:
+        speed_name = str(kwargs.get("link_speed", "GEN4"))
+        port_id = int(kwargs.get("port_id", 0))
+        _cleanup_patgen(dev, port_id, speed_name)
+
     def run(
         self,
         dev: SwitchtecDevice,
@@ -164,6 +169,16 @@ class BerSoak(Recipe):
 
         # Step 4: Soak — poll error counts
         yield self._make_result("BER soak", 3, total_steps, StepStatus.RUNNING)
+
+        # Read baseline error counts before soak
+        baseline: dict[int, int] = {}
+        for lane in range(lane_count):
+            try:
+                mon = dev.diagnostics.pattern_mon_get(port_id, lane)
+                baseline[lane] = mon.error_count
+            except SwitchtecError:
+                baseline[lane] = 0
+
         soak_start = time.monotonic()
         final_errors: dict[int, int] = {}
         total_errors = 0
@@ -179,12 +194,20 @@ class BerSoak(Recipe):
                     pass
             time.sleep(max(0, min(_POLL_INTERVAL, duration_s - (time.monotonic() - soak_start))))
 
-        total_errors = sum(final_errors.values())
+        # Compute delta from baseline
+        total_errors = sum(
+            max(0, final_errors.get(lane, 0) - baseline.get(lane, 0))
+            for lane in range(lane_count)
+        )
+        per_lane_delta = {
+            lane: max(0, final_errors.get(lane, 0) - baseline.get(lane, 0))
+            for lane in range(lane_count)
+        }
         status = StepStatus.PASS if total_errors == 0 else StepStatus.WARN
         r = self._make_result(
             "BER soak", 3, total_steps, status,
             detail=f"Total errors across {lane_count} lanes: {total_errors}",
-            data={"per_lane_errors": final_errors, "total_errors": total_errors},
+            data={"per_lane_errors": per_lane_delta, "total_errors": total_errors},
         )
         results.append(r)
         yield r

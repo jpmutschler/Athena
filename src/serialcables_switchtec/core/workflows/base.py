@@ -55,6 +55,13 @@ class Recipe(ABC):
     def estimated_duration_s(self, **kwargs: object) -> float:
         """Estimate the runtime in seconds for given parameters."""
 
+    def cleanup(self, dev: SwitchtecDevice, **kwargs: object) -> None:
+        """Best-effort cleanup called when recipe thread encounters unhandled exception.
+
+        Subclasses should override to disable hardware state (pattern generators,
+        loopback, etc.) that may have been left active.
+        """
+
     def _make_result(
         self,
         step: str,

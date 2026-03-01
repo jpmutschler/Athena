@@ -455,9 +455,15 @@ def _verification_section() -> None:
                         )
                         _link_badge(post_link_up)
 
-                    # Verdict banner
-                    if post_link_up and not link_went_down:
+                    # Verdict banner — cross-check LTSSM for transient events
+                    ltssm_activity = len(ltssm_entries) > 0
+                    if post_link_up and not link_went_down and not ltssm_activity:
                         _verdict_banner("Link Stable", COLORS.success, "check_circle")
+                    elif post_link_up and not link_went_down and ltssm_activity:
+                        _verdict_banner(
+                            f"Link Stable (LTSSM activity: {len(ltssm_entries)} transitions)",
+                            COLORS.warning, "info",
+                        )
                     elif post_link_up and link_recovered:
                         recovery_str = f" ({recovery_time:.1f}s)" if recovery_time else ""
                         _verdict_banner(

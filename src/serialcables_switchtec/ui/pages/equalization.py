@@ -40,6 +40,10 @@ def equalization_page() -> None:
         with ui.card().classes("w-full q-pa-md q-mb-md"):
             ui.label("TX Equalization Coefficients").classes("text-h6 q-mb-sm")
 
+            _PREV_SPEED_OPTIONS = {
+                0: "Current", 3: "Gen3 (8 GT/s)", 4: "Gen4 (16 GT/s)", 5: "Gen5 (32 GT/s)",
+            }
+
             with ui.row().classes("q-gutter-sm items-end flex-wrap"):
                 coeff_port = ui.number(
                     label="Port ID", value=0, min=0, max=59,
@@ -50,6 +54,9 @@ def equalization_page() -> None:
                 coeff_link = ui.select(
                     options=_LINK_OPTIONS, label="Link", value=DiagLink.CURRENT.value,
                 ).classes("w-32")
+                coeff_prev_speed = ui.select(
+                    options=_PREV_SPEED_OPTIONS, label="Prev Speed", value=0,
+                ).classes("w-36")
 
             with ui.row().classes("q-mt-sm q-gutter-sm"):
                 coeff_btn = ui.button(
@@ -69,11 +76,12 @@ def equalization_page() -> None:
                 port = int(coeff_port.value or 0)
                 end = DiagEnd(int(coeff_end.value or 0))
                 link = DiagLink(int(coeff_link.value or 0))
+                prev_speed = int(coeff_prev_speed.value or 0)
                 coeff_btn.props("loading")
                 try:
                     result = await run.io_bound(
                         dev.diagnostics.port_eq_tx_coeff,
-                        port, 0, end, link,
+                        port, prev_speed, end, link,
                     )
                     coeff_container.clear()
                     with coeff_container:
@@ -175,6 +183,10 @@ def equalization_page() -> None:
         with ui.card().classes("w-full q-pa-md q-mb-md"):
             ui.label("FOM Table").classes("text-h6 q-mb-sm")
 
+            _FOM_PREV_SPEED_OPTIONS = {
+                0: "Current", 3: "Gen3 (8 GT/s)", 4: "Gen4 (16 GT/s)", 5: "Gen5 (32 GT/s)",
+            }
+
             with ui.row().classes("q-gutter-sm items-end flex-wrap"):
                 fom_port = ui.number(
                     label="Port ID", value=0, min=0, max=59,
@@ -182,6 +194,9 @@ def equalization_page() -> None:
                 fom_link = ui.select(
                     options=_LINK_OPTIONS, label="Link", value=DiagLink.CURRENT.value,
                 ).classes("w-32")
+                fom_prev_speed = ui.select(
+                    options=_FOM_PREV_SPEED_OPTIONS, label="Prev Speed", value=0,
+                ).classes("w-36")
 
             fom_btn = ui.button(
                 "Read FOM Table", icon="table_chart",
@@ -195,10 +210,11 @@ def equalization_page() -> None:
                     return
                 port = int(fom_port.value or 0)
                 link = DiagLink(int(fom_link.value or 0))
+                prev_speed = int(fom_prev_speed.value or 0)
                 fom_btn.props("loading")
                 try:
                     result = await run.io_bound(
-                        dev.diagnostics.port_eq_tx_table, port, 0, link,
+                        dev.diagnostics.port_eq_tx_table, port, prev_speed, link,
                     )
                     fom_container.clear()
                     with fom_container:

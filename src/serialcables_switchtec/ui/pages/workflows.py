@@ -145,6 +145,11 @@ def workflows_page() -> None:
                     if summary is not None:
                         result_queue.put(summary)
                 except Exception as exc:
+                    # Best-effort hardware cleanup on unhandled exception
+                    try:
+                        recipe.cleanup(dev, **params)
+                    except Exception:
+                        pass
                     fail = RecipeResult(
                         recipe_name=recipe.name,
                         step="Unexpected error",

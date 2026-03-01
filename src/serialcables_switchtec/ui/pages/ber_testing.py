@@ -112,6 +112,25 @@ def ber_testing_page() -> None:
 
         ui.label("BER Testing").classes("text-h5 q-mb-md")
 
+        # ── Shared Target Port ─────────────────────────────────────
+        with ui.row().classes("q-gutter-sm items-center q-mb-md"):
+            ui.label("Target Port:").classes("text-subtitle1").style(
+                f"color: {COLORS.text_secondary};"
+            )
+            master_port = ui.number(
+                label="Port ID", value=0, min=0, max=59,
+            ).classes("w-24")
+
+        # All section port inputs — bound to master
+        _port_inputs: list = []
+
+        def _sync_ports() -> None:
+            val = int(master_port.value or 0)
+            for inp in _port_inputs:
+                inp.set_value(val)
+
+        master_port.on_value_change(lambda _: _sync_ports())
+
         # ── Section 1: Loopback Configuration ────────────────────────
         with ui.card().classes("w-full q-pa-md q-mb-md"):
             ui.label("Loopback Configuration").classes("text-h6 q-mb-sm")
@@ -120,6 +139,7 @@ def ber_testing_page() -> None:
                 lb_port_input = ui.number(
                     label="Port ID", value=0, min=0, max=59,
                 ).classes("w-24")
+                _port_inputs.append(lb_port_input)
                 lb_speed_select = ui.select(
                     options=_LTSSM_SPEED_OPTIONS,
                     label="LTSSM Speed",
@@ -224,6 +244,7 @@ def ber_testing_page() -> None:
                 pg_port_input = ui.number(
                     label="Port ID", value=0, min=0, max=59,
                 ).classes("w-24")
+                _port_inputs.append(pg_port_input)
                 pg_gen_select = ui.select(
                     options=_GEN_SELECT_OPTIONS,
                     label="PCIe Generation",
@@ -314,6 +335,7 @@ def ber_testing_page() -> None:
                 pm_port_input = ui.number(
                     label="Port ID", value=0, min=0, max=59,
                 ).classes("w-24")
+                _port_inputs.append(pm_port_input)
                 pm_lane_count = ui.number(
                     label="Lane Count", value=4, min=1, max=16,
                 ).classes("w-28")
@@ -341,6 +363,7 @@ def ber_testing_page() -> None:
                 inj_port_input = ui.number(
                     label="Port ID", value=0, min=0, max=59,
                 ).classes("w-24")
+                _port_inputs.append(inj_port_input)
                 inj_count_input = ui.number(
                     label="Error Count", value=1, min=1, max=1000,
                 ).classes("w-28")
