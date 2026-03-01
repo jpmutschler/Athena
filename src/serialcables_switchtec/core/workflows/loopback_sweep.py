@@ -170,8 +170,12 @@ class LoopbackSweep(Recipe):
                 step_idx += 1
                 continue
 
-            # Soak for duration
-            time.sleep(dur_per)
+            # Soak for duration (cancellable)
+            deadline = time.monotonic() + dur_per
+            while time.monotonic() < deadline:
+                if cancel.is_set():
+                    break
+                time.sleep(min(0.5, deadline - time.monotonic()))
 
             # Read errors
             total_err = 0

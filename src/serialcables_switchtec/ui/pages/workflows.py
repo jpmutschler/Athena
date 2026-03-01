@@ -145,7 +145,6 @@ def workflows_page() -> None:
                     if summary is not None:
                         result_queue.put(summary)
                 except Exception as exc:
-                    # Put a fail result for unexpected errors
                     fail = RecipeResult(
                         recipe_name=recipe.name,
                         step="Unexpected error",
@@ -155,7 +154,6 @@ def workflows_page() -> None:
                         detail=str(exc),
                     )
                     result_queue.put(fail)
-                    result_queue.put(None)
                 finally:
                     result_queue.put(None)  # Sentinel
 

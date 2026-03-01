@@ -6,7 +6,12 @@ import threading
 import time
 from collections.abc import Generator
 
-from serialcables_switchtec.bindings.constants import DiagPatternLinkRate
+from serialcables_switchtec.bindings.constants import (
+    DiagPattern,
+    DiagPatternGen5,
+    DiagPatternGen6,
+    DiagPatternLinkRate,
+)
 from serialcables_switchtec.core.device import SwitchtecDevice
 from serialcables_switchtec.core.workflows.base import Recipe
 from serialcables_switchtec.core.workflows.models import (
@@ -21,6 +26,15 @@ from serialcables_switchtec.exceptions import SwitchtecError
 
 _DEFAULT_DURATION = 60
 _POLL_INTERVAL = 2.0
+
+_DISABLED_BY_SPEED: dict[str, int] = {
+    "GEN1": DiagPattern.DISABLED,
+    "GEN2": DiagPattern.DISABLED,
+    "GEN3": DiagPattern.DISABLED,
+    "GEN4": DiagPattern.DISABLED,
+    "GEN5": DiagPatternGen5.DISABLED,
+    "GEN6": DiagPatternGen6.DISABLED,
+}
 
 
 class BerSoak(Recipe):
@@ -198,7 +212,8 @@ class BerSoak(Recipe):
         # Step 6: Cleanup
         yield self._make_result("Cleanup", 5, total_steps, StepStatus.RUNNING)
         try:
-            dev.diagnostics.pattern_gen_set(port_id, 6, DiagPatternLinkRate.DISABLED)
+            disabled_val = _DISABLED_BY_SPEED.get(speed_name, DiagPattern.DISABLED)
+            dev.diagnostics.pattern_gen_set(port_id, disabled_val, DiagPatternLinkRate.DISABLED)
             r = self._make_result(
                 "Cleanup", 5, total_steps, StepStatus.PASS,
                 detail="Pattern generator disabled",

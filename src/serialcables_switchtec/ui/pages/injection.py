@@ -72,9 +72,6 @@ def _warning_banner() -> None:
 # ── Helpers ─────────────────────────────────────────────────────────
 
 
-_history_counter: int = 0
-
-
 def _append_history(
     history: list[dict[str, str]],
     table_ref: list[ui.table | None],
@@ -83,11 +80,10 @@ def _append_history(
     detail: str,
 ) -> None:
     """Append an entry to the injection history and refresh the table."""
-    global _history_counter
-    _history_counter += 1
+    entry_id = len(history) + 1
     timestamp = datetime.now(tz=timezone.utc).strftime("%H:%M:%S")
     history.append({
-        "id": str(_history_counter),
+        "id": str(entry_id),
         "time": timestamp,
         "type": inj_type,
         "port": str(port),

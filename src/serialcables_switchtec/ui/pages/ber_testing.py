@@ -357,8 +357,11 @@ def ber_testing_page() -> None:
         ber_state: dict = {"timer": None, "samples": {}, "start_time": 0.0, "prev_counts": {}}
 
         async def _poll_monitor() -> None:
+            if ber_state.get("timer") is None:
+                return
             dev = state.get_active_device()
             if dev is None:
+                _on_pm_stop()
                 return
 
             port = int(pm_port_input.value or 0)

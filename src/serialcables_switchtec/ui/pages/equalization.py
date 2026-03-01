@@ -394,6 +394,7 @@ def equalization_page() -> None:
                 ch_start_btn.props(remove="loading")
                 return
 
+            ch_start_btn.props(remove="loading")
             ch_state["measuring"] = True
             ch_start_btn.set_enabled(False)
             ch_stop_btn.set_enabled(True)
@@ -402,10 +403,11 @@ def equalization_page() -> None:
             ch_progress_label.set_text("Measurement in progress...")
 
             async def _poll_ch() -> None:
-                if not ch_state["measuring"]:
+                if not ch_state["measuring"] or ch_state.get("timer") is None:
                     return
                 dev_inner = state.get_active_device()
                 if dev_inner is None:
+                    ch_state["measuring"] = False
                     return
                 start = int(ch_start_lane.value or 0)
                 num = int(ch_num_lanes.value or 1)

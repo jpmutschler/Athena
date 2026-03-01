@@ -22,12 +22,6 @@ class RecipeStepper:
 
     def __init__(self, container: ui.column) -> None:
         self._container = container
-        self._step_rows: dict[int, ui.row] = {}
-
-    def add_result(self, result: RecipeResult) -> None:
-        """Add or update a step result in the stepper."""
-        self._container.clear()
-        # We re-render but this is simpler and avoids stale references
 
     def render_results(self, results: list[RecipeResult]) -> None:
         """Render all results accumulated so far."""
