@@ -6,6 +6,8 @@ import ctypes
 from typing import TYPE_CHECKING
 
 from serialcables_switchtec.bindings.constants import (
+    PCIE_CFG_SPACE_EXTENDED,
+    PCIE_CFG_SPACE_STANDARD,
     FabHotResetFlag,
     FabPortControlType,
 )
@@ -164,13 +166,17 @@ class FabricManager:
         check_error(ret, "clear_gfms_events")
         logger.info("gfms_events_cleared")
 
-    def csr_read(self, pdfid: int, addr: int, width: int = 32) -> int:
+    def csr_read(
+        self, pdfid: int, addr: int, width: int = 32, *, extended: bool = False
+    ) -> int:
         """Read an endpoint PCIe config space register.
 
         Args:
             pdfid: Endpoint PD Function ID.
             addr: Config space offset address.
             width: Register width in bits (8, 16, or 32).
+            extended: If True, allow extended config space (0x000-0xFFFF).
+                Default False limits to standard space (0x000-0xFFF).
 
         Returns:
             The register value.
@@ -178,10 +184,13 @@ class FabricManager:
         Raises:
             SwitchtecError: If the read fails or width is invalid.
         """
+        addr_limit = PCIE_CFG_SPACE_EXTENDED if extended else PCIE_CFG_SPACE_STANDARD
         if not (0 <= pdfid <= 0xFFFF):
             raise InvalidParameterError(f"pdfid must be 0-0xFFFF, got {pdfid}")
-        if not (0 <= addr <= 0xFFF):
-            raise InvalidParameterError(f"addr must be 0x000-0xFFF, got 0x{addr:x}")
+        if not (0 <= addr <= addr_limit):
+            raise InvalidParameterError(
+                f"addr must be 0x000-0x{addr_limit:X}, got 0x{addr:x}"
+            )
         if width == 16 and (addr & 0x1):
             raise InvalidParameterError(
                 f"16-bit CSR access requires even address, got 0x{addr:x}"
@@ -221,7 +230,7 @@ class FabricManager:
         return val.value
 
     def csr_write(
-        self, pdfid: int, addr: int, value: int, width: int = 32
+        self, pdfid: int, addr: int, value: int, width: int = 32, *, extended: bool = False
     ) -> None:
         """Write an endpoint PCIe config space register.
 
@@ -230,14 +239,19 @@ class FabricManager:
             addr: Config space offset address.
             value: Value to write.
             width: Register width in bits (8, 16, or 32).
+            extended: If True, allow extended config space (0x000-0xFFFF).
+                Default False limits to standard space (0x000-0xFFF).
 
         Raises:
             SwitchtecError: If the write fails or width is invalid.
         """
+        addr_limit = PCIE_CFG_SPACE_EXTENDED if extended else PCIE_CFG_SPACE_STANDARD
         if not (0 <= pdfid <= 0xFFFF):
             raise InvalidParameterError(f"pdfid must be 0-0xFFFF, got {pdfid}")
-        if not (0 <= addr <= 0xFFF):
-            raise InvalidParameterError(f"addr must be 0x000-0xFFF, got 0x{addr:x}")
+        if not (0 <= addr <= addr_limit):
+            raise InvalidParameterError(
+                f"addr must be 0x000-0x{addr_limit:X}, got 0x{addr:x}"
+            )
         if width == 16 and (addr & 0x1):
             raise InvalidParameterError(
                 f"16-bit CSR access requires even address, got 0x{addr:x}"

@@ -103,20 +103,25 @@ class LinkTrainingDebug(Recipe):
             yield r
             return self._make_summary(results, time.monotonic() - start)
 
+        port_detail = (
+            f"Port {port_id} — link_up={target_port.link_up}, "
+            f"rate={target_port.link_rate}, "
+            f"width=x{target_port.neg_lnk_width}"
+        )
+        if target_port.flit_mode and target_port.flit_mode != "OFF":
+            port_detail += f", FLIT={target_port.flit_mode}"
+
         r = self._make_result(
             "Read port status",
             0,
             total_steps,
             StepStatus.PASS,
-            detail=(
-                f"Port {port_id} — link_up={target_port.link_up}, "
-                f"rate={target_port.link_rate}, "
-                f"width=x{target_port.neg_lnk_width}"
-            ),
+            detail=port_detail,
             data={
                 "link_up": target_port.link_up,
                 "link_rate": target_port.link_rate,
                 "neg_lnk_width": target_port.neg_lnk_width,
+                "flit_mode": target_port.flit_mode,
             },
         )
         results.append(r)
@@ -217,11 +222,13 @@ class LinkTrainingDebug(Recipe):
 
         # Run LTSSM path analysis
         analyzer = LtssmPathAnalyzer()
-        analysis = analyzer.analyze(ltssm_entries)
+        analysis = analyzer.analyze(ltssm_entries, generation=dev.generation)
 
         link_up = target_port.link_up
         if link_up:
             detail = "Link is UP — no training issue detected"
+            if target_port.flit_mode and target_port.flit_mode != "OFF":
+                detail += f" (Gen6 FLIT {target_port.flit_mode} encoding active)"
             status = StepStatus.PASS
         elif transition_count > 0:
             if analysis.verdict == "FAIL":

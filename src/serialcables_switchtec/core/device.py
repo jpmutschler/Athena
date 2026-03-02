@@ -14,6 +14,7 @@ from serialcables_switchtec.bindings.constants import (
     SwitchtecGen,
     SwitchtecVariant,
 )
+from serialcables_switchtec.core.flit import flit_mode_label, infer_flit_mode
 from serialcables_switchtec.bindings.functions import setup_prototypes
 from serialcables_switchtec.bindings.library import get_library, load_library
 from serialcables_switchtec.bindings.types import SwitchtecDeviceInfo, SwitchtecStatus
@@ -404,6 +405,7 @@ class SwitchtecDevice:
                 )
 
             # Process results outside the lock
+            gen = self.generation
             results: list[PortStatus] = []
             for i in range(nr_ports):
                 s = status_ptr[i]
@@ -427,6 +429,8 @@ class SwitchtecDevice:
                 pci_bdf = s.pci_bdf.decode() if s.pci_bdf else None
                 pci_dev = s.pci_dev.decode() if s.pci_dev else None
 
+                flit = infer_flit_mode(gen, s.link_rate)
+
                 results.append(PortStatus(
                     port=port_id,
                     cfg_lnk_width=s.cfg_lnk_width,
@@ -442,6 +446,7 @@ class SwitchtecDevice:
                     pci_dev=pci_dev,
                     vendor_id=s.vendor_id if s.vendor_id else None,
                     device_id=s.device_id if s.device_id else None,
+                    flit_mode=flit_mode_label(flit),
                 ))
             return results
         finally:
@@ -565,6 +570,7 @@ class SwitchtecDevice:
             fw_version=self.get_fw_version(),
             die_temperature=self.die_temperature,
             port_count=len(ports),
+            supports_flit=(self.generation == SwitchtecGen.GEN6),
         )
 
     @staticmethod

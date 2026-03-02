@@ -71,6 +71,7 @@ class PortStatus(BaseModel):
     pci_dev: str | None = None
     vendor_id: int | None = None
     device_id: int | None = None
+    flit_mode: str | None = None
 
 
 class DeviceSummary(BaseModel):
@@ -102,3 +103,4 @@ class DeviceSummary(BaseModel):
     fw_version: str
     die_temperature: float
     port_count: int
+    supports_flit: bool = False

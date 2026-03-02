@@ -118,7 +118,9 @@ class TestCsrReadRoutes:
         assert body["addr"] == 16
         assert body["width"] == 32
         assert body["value"] == 0xDEADBEEF
-        registered_device.fabric.csr_read.assert_called_once_with(256, 16, 32)
+        registered_device.fabric.csr_read.assert_called_once_with(
+            256, 16, 32, extended=False
+        )
 
     def test_csr_read_width_8(self, client, registered_device):
         """GET csr read with width=8 should pass 8 to the manager."""
@@ -156,7 +158,9 @@ class TestCsrReadRoutes:
         assert response.status_code == 200
         body = response.json()
         assert body["width"] == 32
-        registered_device.fabric.csr_read.assert_called_once_with(256, 0, 32)
+        registered_device.fabric.csr_read.assert_called_once_with(
+            256, 0, 32, extended=False
+        )
 
     def test_csr_read_addr_out_of_range(self, client, registered_device):
         """GET csr read with addr > 0xFFF should return 422."""
@@ -209,7 +213,7 @@ class TestCsrWriteRoutes:
         assert response.status_code == 200
         assert response.json() == {"status": "written"}
         registered_device.fabric.csr_write.assert_called_once_with(
-            256, 4, 6, 16
+            256, 4, 6, 16, extended=False,
         )
 
     def test_csr_write_default_width(self, client, registered_device):
@@ -220,7 +224,7 @@ class TestCsrWriteRoutes:
         )
         assert response.status_code == 200
         registered_device.fabric.csr_write.assert_called_once_with(
-            256, 0, 1, 32
+            256, 0, 1, 32, extended=False,
         )
 
     def test_csr_write_value_overflow(self, client, registered_device):
@@ -299,6 +303,53 @@ class TestCsrWriteRoutes:
         response = client.post(
             "/api/devices/testdev/fabric/csr/100000",
             json={"addr": 0, "value": 1, "width": 32},
+        )
+        assert response.status_code == 422
+
+
+# -- Extended Config Space routes -----------------------------------------------
+
+
+class TestExtendedConfigSpaceRoutes:
+    """Tests for extended config space (64KB ECAM) via extended param."""
+
+    def test_csr_read_extended_accepts_high_addr(self, client, registered_device):
+        """GET csr read with extended=true should accept addr > 0xFFF."""
+        registered_device.fabric.csr_read.return_value = 0x42
+        response = client.get(
+            "/api/devices/testdev/fabric/csr/256?addr=4096&width=32&extended=true"
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["addr"] == 4096
+        assert body["value"] == 0x42
+        registered_device.fabric.csr_read.assert_called_once_with(
+            256, 4096, 32, extended=True
+        )
+
+    def test_csr_read_standard_rejects_high_addr(self, client, registered_device):
+        """GET csr read without extended should reject addr > 0xFFF."""
+        response = client.get(
+            "/api/devices/testdev/fabric/csr/256?addr=4096&width=32"
+        )
+        assert response.status_code == 422
+
+    def test_csr_write_extended_accepts_high_addr(self, client, registered_device):
+        """POST csr write with extended=true should accept addr > 0xFFF."""
+        response = client.post(
+            "/api/devices/testdev/fabric/csr/256",
+            json={"addr": 4096, "value": 1, "width": 32, "extended": True},
+        )
+        assert response.status_code == 200
+        registered_device.fabric.csr_write.assert_called_once_with(
+            256, 4096, 1, 32, extended=True,
+        )
+
+    def test_csr_write_standard_rejects_high_addr(self, client, registered_device):
+        """POST csr write without extended should reject addr > 0xFFF."""
+        response = client.post(
+            "/api/devices/testdev/fabric/csr/256",
+            json={"addr": 4096, "value": 1, "width": 32},
         )
         assert response.status_code == 422
 

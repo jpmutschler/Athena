@@ -11,6 +11,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
+from serialcables_switchtec.bindings.constants import SwitchtecGen
+
 
 # ---- Result data classes ------------------------------------------------
 
@@ -346,8 +348,9 @@ class LtssmPathAnalyzer:
             entries: List of LTSSM log entries.  Each entry must have
                 ``link_state_str`` (str), ``link_rate``, ``link_width`` (int),
                 and ``timestamp`` (int) attributes.
-            generation: Optional PCIe generation hint (unused today, reserved
-                for future generation-specific heuristics).
+            generation: Optional PCIe generation value (``SwitchtecGen``).
+                When ``SwitchtecGen.GEN6``, an informational pattern about
+                FLIT encoding is appended.
 
         Returns:
             An ``LtssmAnalysis`` containing histogram, detected patterns,
@@ -369,6 +372,19 @@ class LtssmPathAnalyzer:
         patterns.extend(_detect_recovery_loops(entries))
         patterns.extend(_detect_detect_polling_oscillation(entries))
         patterns.extend(_detect_eq_stuck(entries))
+
+        # Gen6 FLIT encoding informational note
+        if generation == SwitchtecGen.GEN6:
+            patterns.append(LtssmPattern(
+                name="gen6_flit_encoding",
+                severity="info",
+                occurrences=1,
+                description=(
+                    "Gen6 link uses FLIT encoding (68B mandatory). "
+                    "Recovery EQ phases differ from Gen3-5 TLP framing — "
+                    "longer EQ sequences may be expected during FLIT negotiation."
+                ),
+            ))
 
         # Determine verdict from highest severity
         verdict = _compute_verdict(patterns)

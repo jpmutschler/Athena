@@ -670,3 +670,60 @@ class TestCsrWrite:
         fab = FabricManager(device)
         with pytest.raises(SwitchtecError):
             fab.csr_write(pdfid=0x100, addr=0x10, value=0x1, width=32)
+
+
+# ─── Extended Config Space Tests ────────────────────────────────────
+
+
+class TestCsrReadExtended:
+    """Tests for extended config space (0x000-0xFFFF) via extended=True."""
+
+    def test_extended_read_accepts_addr_above_0xfff(self, device, mock_library):
+        mock_library.switchtec_ep_csr_read32.side_effect = (
+            _make_csr_read_side_effect(0x42, ctypes.c_uint32)
+        )
+        fab = FabricManager(device)
+        result = fab.csr_read(pdfid=0x100, addr=0x1000, width=32, extended=True)
+        assert result == 0x42
+
+    def test_extended_read_accepts_max_addr(self, device, mock_library):
+        mock_library.switchtec_ep_csr_read32.side_effect = (
+            _make_csr_read_side_effect(0x99, ctypes.c_uint32)
+        )
+        fab = FabricManager(device)
+        result = fab.csr_read(pdfid=0x100, addr=0xFFFC, width=32, extended=True)
+        assert result == 0x99
+
+    def test_standard_read_still_rejects_above_0xfff(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="addr"):
+            fab.csr_read(pdfid=0x100, addr=0x1000, width=32)
+
+    def test_standard_read_still_rejects_above_0xfff_explicit_false(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="addr"):
+            fab.csr_read(pdfid=0x100, addr=0x1000, width=32, extended=False)
+
+    def test_extended_read_rejects_above_0xffff(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="addr"):
+            fab.csr_read(pdfid=0x100, addr=0x10000, width=32, extended=True)
+
+
+class TestCsrWriteExtended:
+    """Tests for extended config space writes via extended=True."""
+
+    def test_extended_write_accepts_addr_above_0xfff(self, device, mock_library):
+        fab = FabricManager(device)
+        fab.csr_write(pdfid=0x100, addr=0x1000, value=0x42, width=32, extended=True)
+        mock_library.switchtec_ep_csr_write32.assert_called_once()
+
+    def test_standard_write_still_rejects_above_0xfff(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="addr"):
+            fab.csr_write(pdfid=0x100, addr=0x1000, value=0x42, width=32)
+
+    def test_extended_write_rejects_above_0xffff(self, device, mock_library):
+        fab = FabricManager(device)
+        with pytest.raises(InvalidParameterError, match="addr"):
+            fab.csr_write(pdfid=0x100, addr=0x10000, value=0x42, width=32, extended=True)

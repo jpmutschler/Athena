@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from serialcables_switchtec.bindings.constants import SwitchtecGen
 from serialcables_switchtec.core.ltssm_analyzer import (
     LtssmAnalysis,
     LtssmHistogramEntry,
@@ -240,6 +241,55 @@ class TestVerdictLogic:
 # ---------------------------------------------------------------------------
 # Dataclass contracts
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Gen6 FLIT encoding pattern
+# ---------------------------------------------------------------------------
+
+
+class TestGen6FlitPattern:
+    """Tests for Gen6 FLIT encoding informational pattern."""
+
+    def test_gen6_adds_flit_pattern(self):
+        entries = _make_entries("L0", "Recovery", "L0")
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries, generation=SwitchtecGen.GEN6)
+
+        pattern_names = [p.name for p in result.patterns]
+        assert "gen6_flit_encoding" in pattern_names
+
+    def test_gen6_flit_pattern_is_info_severity(self):
+        entries = _make_entries("L0")
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries, generation=SwitchtecGen.GEN6)
+
+        flit_patterns = [p for p in result.patterns if p.name == "gen6_flit_encoding"]
+        assert len(flit_patterns) == 1
+        assert flit_patterns[0].severity == "info"
+
+    def test_gen6_flit_does_not_affect_clean_verdict(self):
+        """Info-severity pattern should not change verdict from CLEAN."""
+        entries = _make_entries("L0", "L0")
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries, generation=SwitchtecGen.GEN6)
+        assert result.verdict == "CLEAN"
+
+    def test_gen5_does_not_add_flit_pattern(self):
+        entries = _make_entries("L0")
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries, generation=SwitchtecGen.GEN5)
+
+        pattern_names = [p.name for p in result.patterns]
+        assert "gen6_flit_encoding" not in pattern_names
+
+    def test_no_generation_no_flit_pattern(self):
+        entries = _make_entries("L0")
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries, generation=None)
+
+        pattern_names = [p.name for p in result.patterns]
+        assert "gen6_flit_encoding" not in pattern_names
 
 
 class TestDataclassContracts:

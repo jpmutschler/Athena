@@ -236,6 +236,7 @@ class RecipeParameter(BaseModel):
   5. Read event counters (warn if non-zero error counts)
   6. Read bandwidth counters (info: current utilization)
   7. Read LTSSM log for recent transitions (info: last N state changes)
+- **FLIT mode:** Step output includes FLIT encoding mode (OFF/68B/256B) for Gen6 ports in the step details and data fields.
 - **Use case:** Quick sanity check on a specific port after cable change or power cycle
 
 #### 3. Link Training Debug
@@ -251,6 +252,7 @@ class RecipeParameter(BaseModel):
   6. Read FS/LF values
   7. Read LTSSM log (full transition history since clear)
   8. Summary: training status with root cause hints (e.g., "stuck in Polling.Compliance")
+- **FLIT mode:** Step details include FLIT encoding mode for Gen6 ports. The LTSSM analyzer adds a `gen6_flit_encoding` INFO pattern when analyzing Gen6 link data, surfacing the active FLIT mode (68B or 256B) in the analysis results.
 - **Use case:** Debug link training failures. Run this when a port won't link up.
 - **UI rendering:** LTSSM state timeline + EQ convergence table
 
@@ -410,9 +412,9 @@ class RecipeParameter(BaseModel):
   3. Identify PCIe capability, AER capability offsets
   4. Read key registers (Link Control, Link Status, Device Control, Device Status)
   5. Read AER registers (uncorrectable/correctable status, mask, severity)
-  6. Summary: formatted config space dump with field decode
+  6. Summary: formatted config space dump with field decode, including FLIT mode for Gen6 ports
 - **Use case:** Quick endpoint identification and status check
-- **UI rendering:** Formatted register table with bit-field decode
+- **UI rendering:** Formatted register table with bit-field decode. Gen6 ports include FLIT encoding mode (68B/256B) in the port data section.
 
 #### 15. Firmware Validation
 - **Category:** Configuration

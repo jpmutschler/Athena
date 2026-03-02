@@ -70,6 +70,7 @@ class ConfigDump(Recipe):
                 "fw_version": summary.fw_version,
                 "die_temperature": summary.die_temperature,
                 "port_count": summary.port_count,
+                "supports_flit": summary.supports_flit,
             }
             r = self._make_result(
                 "Device summary", 0, total_steps, StepStatus.PASS,
@@ -131,16 +132,19 @@ class ConfigDump(Recipe):
             "link_rate": target.link_rate,
             "neg_lnk_width": target.neg_lnk_width,
             "ltssm_str": target.ltssm_str,
-            "pci_bdf": getattr(target, "pci_bdf", ""),
-            "vendor_id": getattr(target, "vendor_id", 0),
-            "device_id": getattr(target, "device_id", 0),
-            "cfg_lnk_width": getattr(target, "cfg_lnk_width", 0),
+            "pci_bdf": target.pci_bdf,
+            "vendor_id": target.vendor_id,
+            "device_id": target.device_id,
+            "cfg_lnk_width": target.cfg_lnk_width,
+            "flit_mode": target.flit_mode,
         }
         status = StepStatus.PASS if target.link_up else StepStatus.WARN
         detail = (
             f"Port {port_id} {'UP' if target.link_up else 'DOWN'} "
             f"rate={target.link_rate} width=x{target.neg_lnk_width}"
         )
+        if target.flit_mode and target.flit_mode != "OFF":
+            detail += f" FLIT={target.flit_mode}"
         r = self._make_result(
             "Port status", 1, total_steps, status,
             detail=detail, data=port_data,

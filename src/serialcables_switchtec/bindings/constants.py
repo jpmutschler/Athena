@@ -8,6 +8,11 @@ from __future__ import annotations
 import sys
 from enum import IntEnum, IntFlag
 
+# ─── PCIe Config Space ────────────────────────────────────────────────
+
+PCIE_CFG_SPACE_STANDARD = 0xFFF   # 4KB standard config space
+PCIE_CFG_SPACE_EXTENDED = 0xFFFF  # 64KB via Switchtec MRPC tunneled access
+
 # ─── Limits ───────────────────────────────────────────────────────────
 
 MAX_PARTS = 48
@@ -653,3 +658,19 @@ class FabHotResetFlag(IntEnum):
 
     NONE = 0
     PERST = 1
+
+
+# ─── FLIT Mode ─────────────────────────────────────────────────────────
+
+
+class FlitMode(IntEnum):
+    """Gen6 FLIT encoding mode.
+
+    Gen6 replaces TLP framing with FLIT (Flow-control unIT) encoding.
+    68-byte FLITs are mandatory for Gen6; 256-byte FLITs are optional
+    high-throughput mode.
+    """
+
+    OFF = 0       # Traditional TLP (Gen5 and below)
+    FLIT_68B = 1  # 68-byte FLIT (Gen6 mandatory baseline)
+    FLIT_256B = 2  # 256-byte FLIT (Gen6 optional high-throughput)

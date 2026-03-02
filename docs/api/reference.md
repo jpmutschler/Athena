@@ -262,14 +262,24 @@ curl -X POST http://localhost:8000/api/devices/sw0/fabric/bind \
   -H "Content-Type: application/json" \
   -d '{"host_port": 0, "endpoint_port": 4}'
 
-# Read config space register
+# Read config space register (standard 0-4KB range)
 curl "http://localhost:8000/api/devices/sw0/fabric/csr/0?addr=0&width=32"
 
-# Write config space register
+# Read extended config space register (0-64KB range via Switchtec MRPC)
+curl "http://localhost:8000/api/devices/sw0/fabric/csr/0?addr=0x1000&width=32&extended=true"
+
+# Write config space register (standard range)
 curl -X POST http://localhost:8000/api/devices/sw0/fabric/csr/0 \
   -H "Content-Type: application/json" \
   -d '{"addr": 0, "value": 255, "width": 32}'
+
+# Write extended config space register (0-64KB range)
+curl -X POST http://localhost:8000/api/devices/sw0/fabric/csr/0 \
+  -H "Content-Type: application/json" \
+  -d '{"addr": 4096, "value": 255, "width": 32, "extended": true}'
 ```
+
+**CSR `extended` parameter:** When `extended=true`, the address range expands from 0x000-0xFFF (standard 4KB) to 0x000-0xFFFF (64KB). Extended access uses Switchtec MRPC tunneled access rather than host ECAM. Default is `false` (backward compatible).
 
 ### Performance
 

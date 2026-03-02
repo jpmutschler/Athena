@@ -1121,7 +1121,7 @@ Click **Get Config** to read. The result displays as a card showing:
 
 ### CSR Read / Write
 
-Read or write Configuration Space Registers:
+Read or write Configuration Space Registers. Supports both standard (0-4KB) and extended (0-64KB) config space access.
 
 #### Read Parameters
 
@@ -1130,6 +1130,7 @@ Read or write Configuration Space Registers:
 | **PDFID** | Number (0-65535) | Physical Device Function ID to target |
 | **Address (hex)** | Text | Register address in hexadecimal (e.g., "0x00", "0x100") |
 | **Width** | Select: 8-bit, 16-bit, 32-bit | Access width |
+| **Extended** | Checkbox | Enable extended config space access (0-64KB). When unchecked, addresses are limited to 0x000-0xFFF (standard 4KB). When checked, addresses expand to 0x000-0xFFFF (64KB) via Switchtec MRPC tunneled access (not host ECAM). Default: unchecked. |
 
 Click **Read CSR** to read the register. The result appears below as: `CSR[0x100] (w32) = 0x12345678`.
 
@@ -1138,6 +1139,7 @@ Click **Read CSR** to read the register. The result appears below as: `CSR[0x100
 | Parameter | Type | Description |
 |---|---|---|
 | **Write Value (hex)** | Text | Value to write in hexadecimal |
+| **Extended** | Checkbox | Same as read -- enables extended config space address range |
 
 Click **Write CSR** to write. A confirmation dialog appears:
 

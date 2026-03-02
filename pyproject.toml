@@ -56,6 +56,33 @@ include = ["src/", "resources/switchtec-user-4.4-rc2/", "scripts/", "tests/", "h
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: cross-layer integration tests",
+]
+
+[tool.coverage.run]
+source = ["src/serialcables_switchtec"]
+branch = true
+omit = [
+    "src/serialcables_switchtec/_native/*",
+    "src/serialcables_switchtec/ui/*",
+    "src/serialcables_switchtec/bindings/types.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 50
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+    "@abstractmethod",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
 
 [tool.ruff]
 line-length = 100

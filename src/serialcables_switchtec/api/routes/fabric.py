@@ -15,7 +15,9 @@ bind/unbind** are rate-limited to 5 calls per device per 60 seconds via
 CSR access supports 8-bit, 16-bit, and 32-bit widths.  16-bit accesses
 require 2-byte-aligned addresses; 32-bit accesses require 4-byte-aligned
 addresses.  The valid address range is 0x000-0xFFF (standard PCIe
-configuration space).
+configuration space), or 0x000-0xFFFF (extended) when ``extended=true``
+is specified.  Extended access uses the Switchtec MRPC tunneled config
+path rather than host ECAM.
 """
 
 from __future__ import annotations
@@ -27,6 +29,8 @@ from serialcables_switchtec.api.dependencies import DEVICE_ID_PATTERN, get_devic
 from serialcables_switchtec.api.error_handlers import raise_on_error
 from serialcables_switchtec.api.rate_limit import csr_write_limiter, fabric_control_limiter
 from serialcables_switchtec.bindings.constants import (
+    PCIE_CFG_SPACE_EXTENDED,
+    PCIE_CFG_SPACE_STANDARD,
     FabHotResetFlag,
     FabPortControlType,
 )
@@ -310,9 +314,10 @@ def clear_gfms_events(
 
 
 class CsrWriteRequest(BaseModel):
-    addr: int = Field(ge=0, le=0xFFF)
+    addr: int = Field(ge=0, le=PCIE_CFG_SPACE_EXTENDED)
     value: int = Field(ge=0)
     width: int = Field(default=32)
+    extended: bool = Field(default=False)
 
     @field_validator("width")
     @classmethod
@@ -323,6 +328,12 @@ class CsrWriteRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_value_and_alignment(self) -> "CsrWriteRequest":
+        addr_limit = PCIE_CFG_SPACE_EXTENDED if self.extended else PCIE_CFG_SPACE_STANDARD
+        if self.addr > addr_limit:
+            raise ValueError(
+                f"addr 0x{self.addr:x} exceeds {'extended' if self.extended else 'standard'} "
+                f"config space limit 0x{addr_limit:X}"
+            )
         max_val = (1 << self.width) - 1
         if self.value > max_val:
             raise ValueError(
@@ -343,23 +354,38 @@ class CsrWriteRequest(BaseModel):
 def csr_read(
     device_id: str = Path(pattern=DEVICE_ID_PATTERN),
     pdfid: int = Path(ge=0, le=0xFFFF),
-    addr: int = Query(ge=0, le=0xFFF),
+    addr: int = Query(
+        ge=0,
+        le=PCIE_CFG_SPACE_EXTENDED,
+        description=(
+            "Register byte offset. Limited to 0x000-0xFFF (standard config space) "
+            "unless extended=true, which allows 0x000-0xFFFF."
+        ),
+    ),
     width: int = Query(default=32),
+    extended: bool = Query(
+        default=False,
+        description="Allow extended config space addresses (0x000-0xFFFF).",
+    ),
 ) -> dict[str, object]:
     """Read a PCIe Configuration Space Register (CSR) from an endpoint.
 
     Performs a configuration-space read targeting the endpoint identified by
-    its PDFID (Physical Device Function ID).  The address must fall within
-    the standard 4 KB PCIe configuration space (0x000-0xFFF).
+    its PDFID (Physical Device Function ID).  By default the address must
+    fall within the standard 4 KB PCIe configuration space (0x000-0xFFF).
+    Pass ``extended=true`` to access the 64 KB extended configuration space
+    (0x000-0xFFFF) via ECAM.
 
     Parameters:
 
     - ``device_id`` (path) -- the registered device identifier.
     - ``pdfid`` (path) -- target endpoint PDFID (0-65535).
-    - ``addr`` (query) -- register byte offset (0x000-0xFFF).
+    - ``addr`` (query) -- register byte offset.
     - ``width`` (query) -- access width in bits: ``8``, ``16``, or ``32``.
       Default ``32``.  16-bit reads require even-aligned addresses; 32-bit
       reads require 4-byte-aligned addresses.
+    - ``extended`` (query) -- if ``true``, allow extended config space
+      addresses (0x000-0xFFFF).  Default ``false``.
 
     Response format::
 
@@ -371,20 +397,25 @@ def csr_read(
     - **422 Unprocessable Entity** -- invalid width or address alignment.
     - **500 Internal Server Error** -- CSR read failed.
     """
-    if width not in (8, 16, 32):
-        from fastapi import HTTPException
+    from fastapi import HTTPException  # noqa: PLC0415
 
+    addr_limit = PCIE_CFG_SPACE_EXTENDED if extended else PCIE_CFG_SPACE_STANDARD
+    if addr > addr_limit:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"addr 0x{addr:x} exceeds {'extended' if extended else 'standard'} "
+                f"config space limit 0x{addr_limit:X}"
+            ),
+        )
+    if width not in (8, 16, 32):
         raise HTTPException(status_code=422, detail="width must be 8, 16, or 32")
     if width == 16 and (addr & 0x1):
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=422,
             detail=f"16-bit CSR access requires even address, got 0x{addr:x}",
         )
     if width == 32 and (addr & 0x3):
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=422,
             detail=f"32-bit CSR access requires 4-byte aligned address, got 0x{addr:x}",
@@ -392,7 +423,7 @@ def csr_read(
     dev = get_device(device_id)
     try:
         mgr = dev.fabric
-        value = mgr.csr_read(pdfid, addr, width)
+        value = mgr.csr_read(pdfid, addr, width, extended=extended)
         return {
             "pdfid": pdfid,
             "addr": addr,
@@ -424,12 +455,15 @@ def csr_write(
 
     Request body fields:
 
-    - ``addr`` -- register byte offset (0x000-0xFFF).
+    - ``addr`` -- register byte offset (0x000-0xFFF standard, 0x000-0xFFFF
+      when ``extended`` is true).
     - ``value`` -- the value to write, which must fit within ``width`` bits.
     - ``width`` -- access width in bits: ``8``, ``16``, or ``32``.
       Default ``32``.  16-bit writes require even-aligned addresses; 32-bit
       writes require 4-byte-aligned addresses.  The ``value`` is validated
       to not exceed the maximum for the chosen width.
+    - ``extended`` -- if ``true``, allow extended config space addresses
+      (0x000-0xFFFF).  Default ``false``.
 
     Response format::
 
@@ -446,7 +480,10 @@ def csr_write(
     dev = get_device(device_id)
     try:
         mgr = dev.fabric
-        mgr.csr_write(pdfid, request.addr, request.value, request.width)
+        mgr.csr_write(
+            pdfid, request.addr, request.value, request.width,
+            extended=request.extended,
+        )
         return {"status": "written"}
     except Exception as e:
         raise_on_error(e, "csr_write")

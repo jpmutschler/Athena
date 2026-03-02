@@ -134,6 +134,8 @@ class LinkHealthCheck(Recipe):
                 f"Port {port_id} UP — rate={target_port.link_rate}, "
                 f"width=x{target_port.neg_lnk_width}"
             )
+            if target_port.flit_mode and target_port.flit_mode != "OFF":
+                detail += f", FLIT={target_port.flit_mode}"
         else:
             status = StepStatus.WARN
             detail = f"Port {port_id} DOWN — LTSSM={target_port.ltssm_str}"
@@ -149,6 +151,7 @@ class LinkHealthCheck(Recipe):
                 "link_rate": target_port.link_rate,
                 "neg_lnk_width": target_port.neg_lnk_width,
                 "ltssm": target_port.ltssm_str,
+                "flit_mode": target_port.flit_mode,
             },
         )
         results.append(r)

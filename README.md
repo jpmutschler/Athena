@@ -63,7 +63,9 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 
 **Events** -- Query event summary counts, clear all events, and wait for events with configurable timeouts.
 
-**Fabric Topology** (PAX devices) -- Port enable/disable/hot-reset, port configuration, GFMS bind/unbind, event clearing, and endpoint config space read/write (CSR access via MRPC).
+**Fabric Topology** (PAX devices) -- Port enable/disable/hot-reset, port configuration, GFMS bind/unbind, event clearing, and endpoint config space read/write (CSR access via MRPC) with extended config space support (0-64KB via Switchtec MRPC tunneled access) and PCIe extended capability enumeration.
+
+**Gen6 FLIT Mode Awareness** -- Automatic detection and reporting of PCIe Gen6 FLIT encoding mode (68B or 256B) across port status, device summary, and workflow recipes. FLIT mode is inferred from link generation and rate for Gen6-capable devices.
 
 **Performance Monitoring** -- Bandwidth counters per port (egress/ingress posted, completion, non-posted), latency measurement between port pairs, and continuous monitoring with `LinkHealthMonitor` for delta-based sampling at configurable intervals.
 
@@ -946,10 +948,14 @@ with SwitchtecDevice.open("/dev/switchtec0") as dev:
     )
     fab.bind(req)
 
-    # Read/write endpoint PCIe config space registers
+    # Read/write endpoint PCIe config space registers (standard 0-4KB)
     value = fab.csr_read(pdfid=0x100, addr=0x10, width=32)
     print(f"BAR0: 0x{value:08x}")
     fab.csr_write(pdfid=0x100, addr=0x04, value=0x06, width=16)
+
+    # Access extended config space (0-64KB) via Switchtec MRPC tunneled access
+    ext_val = fab.csr_read(pdfid=0x100, addr=0x1000, width=32, extended=True)
+    print(f"Extended cap @ 0x1000: 0x{ext_val:08x}")
 ```
 
 ### Performance Monitoring
@@ -1139,9 +1145,11 @@ src/serialcables_switchtec/
 |   |-- evcntr.py               # EventCounterManager: setup, read, wait
 |   |-- firmware.py             # FirmwareManager: version, read, write, toggle, boot-ro
 |   |-- events.py               # EventManager: summary, clear, wait
-|   |-- fabric.py               # FabricManager: port control/config, bind/unbind, events
+|   |-- fabric.py               # FabricManager: port control/config, bind/unbind, events, CSR
+|   |-- flit.py                 # Gen6 FLIT mode inference (infer_flit_mode, flit_mode_label)
 |   |-- monitor.py              # LinkHealthMonitor: continuous BW and event counter sampling
 |   |-- osa.py                  # OrderedSetAnalyzer: type/pattern config, capture control
+|   |-- pcie_caps.py            # PCIe extended capability walker (walk_extended_caps, ExtCapEntry)
 |   |-- performance.py          # PerformanceManager: bandwidth counters, latency
 |   +-- workflows/              # 18 validation recipes + workflow builder
 |       |-- __init__.py         # RECIPE_REGISTRY dict, get_recipe()
@@ -1218,7 +1226,7 @@ src/serialcables_switchtec/
 
 tests/
 |-- unit/                       # Unit tests (mocked C library calls)
-|-- integration/                # Integration tests
+|-- integration/                # Cross-layer integration tests (real Pydantic models, pytest -m integration)
 +-- e2e/                        # End-to-end CLI and API tests
 ```
 
@@ -1264,11 +1272,17 @@ pip install -e ".[dev]"
 # Run the full test suite
 pytest tests/ -v
 
-# Run with coverage report
-pytest tests/ -v --cov=serialcables_switchtec --cov-report=term-missing
+# Run with coverage report (configured in pyproject.toml)
+pytest tests/ --cov --cov-report=term-missing
+
+# Run integration tests only
+pytest -m integration
+
+# Run with coverage XML output (CI mode)
+pytest tests/ -x -q --tb=short --cov --cov-report=term-missing --cov-report=xml:coverage.xml
 ```
 
-**Current status:** 838 tests across unit, integration, and end-to-end suites organized by domain (device, diagnostics, firmware, events, fabric, performance, error handlers). Coverage is at 84%. The UI layer requires a NiceGUI runtime and is not covered by automated tests.
+**Current status:** 1619 tests across unit, integration, and end-to-end suites organized by domain (device, diagnostics, firmware, events, fabric, performance, error handlers). Integration tests (`tests/integration/`) use real frozen Pydantic models to catch type errors at recipe boundaries. Coverage configuration is in `pyproject.toml` with `branch=true` and `fail_under=50`. The UI layer requires a NiceGUI runtime and is not covered by automated tests.
 
 **Public testing module:** Validation engineers can write pytest suites without hardware by importing `serialcables_switchtec.testing`:
 
