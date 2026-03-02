@@ -8,7 +8,9 @@ import pytest
 
 from serialcables_switchtec.bindings.constants import SwitchtecGen
 from serialcables_switchtec.core.ltssm_analyzer import (
+    DegradationInfo,
     LtssmAnalysis,
+    LtssmContextualAnalysis,
     LtssmHistogramEntry,
     LtssmPathAnalyzer,
     LtssmPattern,
@@ -314,3 +316,294 @@ class TestDataclassContracts:
         )
         with pytest.raises(AttributeError):
             entry.count = 10
+
+    def test_degradation_info_is_frozen(self):
+        info = DegradationInfo(
+            degradation_type="speed",
+            configured="Gen5",
+            negotiated="Gen4",
+            severity="warning",
+            description="test",
+        )
+        with pytest.raises(AttributeError):
+            info.severity = "critical"
+
+    def test_contextual_analysis_is_frozen(self):
+        analysis = LtssmAnalysis(
+            total_transitions=0, histogram=[], patterns=[],
+            verdict="CLEAN", summary="test",
+        )
+        ctx = LtssmContextualAnalysis(
+            analysis=analysis, degradations=[],
+            overall_verdict="CLEAN", overall_summary="test",
+        )
+        with pytest.raises(AttributeError):
+            ctx.overall_verdict = "FAIL"
+
+
+# ---------------------------------------------------------------------------
+# L1 exit issues detection
+# ---------------------------------------------------------------------------
+
+
+class TestL1ExitIssues:
+    """Tests for L1->Recovery->L1 cycle detection without sustained L0."""
+
+    def test_l1_exit_issues_detected(self):
+        """3+ L1->Recovery->L1 cycles should flag l1_exit_issues."""
+        entries = _make_entries(
+            "L1", "Recovery", "L1",
+            "Recovery", "L1",
+            "Recovery", "L1",
+        )
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        pattern_names = [p.name for p in result.patterns]
+        assert "l1_exit_issues" in pattern_names
+
+    def test_sustained_l0_breaks_l1_cycle(self):
+        """L1->Recovery->L0 (sustained) should not trigger l1_exit_issues."""
+        entries = _make_entries(
+            "L1", "Recovery", "L0", "L0", "L0",
+            "L1", "Recovery", "L0", "L0", "L0",
+        )
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        pattern_names = [p.name for p in result.patterns]
+        assert "l1_exit_issues" not in pattern_names
+
+    def test_single_l1_recovery_cycle_ok(self):
+        """A single L1->Recovery cycle is normal and should not flag."""
+        entries = _make_entries("L1", "Recovery", "L0")
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        pattern_names = [p.name for p in result.patterns]
+        assert "l1_exit_issues" not in pattern_names
+
+    def test_l1_exit_issues_severity_is_warning(self):
+        entries = _make_entries(
+            "L1", "Recovery", "L1",
+            "Recovery", "L1",
+            "Recovery", "L1",
+        )
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        l1_patterns = [p for p in result.patterns if p.name == "l1_exit_issues"]
+        assert len(l1_patterns) == 1
+        assert l1_patterns[0].severity == "warning"
+
+
+# ---------------------------------------------------------------------------
+# L0s oscillation detection
+# ---------------------------------------------------------------------------
+
+
+class TestL0sOscillation:
+    """Tests for excessive L0<->L0s round-trips."""
+
+    def test_l0s_oscillation_detected(self):
+        """10+ L0<->L0s round-trips should flag l0s_oscillation."""
+        states = []
+        for _ in range(12):
+            states.extend(["L0", "L0s"])
+        entries = _make_entries(*states)
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        pattern_names = [p.name for p in result.patterns]
+        assert "l0s_oscillation" in pattern_names
+
+    def test_normal_l0s_usage_no_flag(self):
+        """A few L0<->L0s transitions are normal ASPM behavior."""
+        entries = _make_entries("L0", "L0s", "L0", "L0s", "L0")
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        pattern_names = [p.name for p in result.patterns]
+        assert "l0s_oscillation" not in pattern_names
+
+    def test_l0s_oscillation_severity_is_warning(self):
+        states = []
+        for _ in range(12):
+            states.extend(["L0", "L0s"])
+        entries = _make_entries(*states)
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        l0s_patterns = [p for p in result.patterns if p.name == "l0s_oscillation"]
+        assert len(l0s_patterns) == 1
+        assert l0s_patterns[0].severity == "warning"
+
+
+# ---------------------------------------------------------------------------
+# Compliance mode detection
+# ---------------------------------------------------------------------------
+
+
+class TestComplianceMode:
+    """Tests for Compliance state detection."""
+
+    def test_single_compliance_entry_warning(self):
+        entries = _make_entries("Detect", "Polling", "Compliance", "L0")
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        comp_patterns = [p for p in result.patterns if p.name == "compliance_mode"]
+        assert len(comp_patterns) == 1
+        assert comp_patterns[0].severity == "warning"
+
+    def test_repeated_compliance_critical(self):
+        entries = _make_entries(
+            "Detect", "Compliance", "Detect", "Compliance", "L0",
+        )
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        comp_patterns = [p for p in result.patterns if p.name == "compliance_mode"]
+        assert len(comp_patterns) == 1
+        assert comp_patterns[0].severity == "critical"
+
+    def test_no_compliance_clean(self):
+        entries = _make_entries("Detect", "Polling", "L0")
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        pattern_names = [p.name for p in result.patterns]
+        assert "compliance_mode" not in pattern_names
+
+
+# ---------------------------------------------------------------------------
+# Hot reset storm detection
+# ---------------------------------------------------------------------------
+
+
+class TestHotResetStorm:
+    """Tests for Hot Reset storm detection."""
+
+    def test_two_hot_resets_warning(self):
+        entries = _make_entries(
+            "L0", "Hot Reset", "L0", "Hot Reset", "L0",
+        )
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        hr_patterns = [p for p in result.patterns if p.name == "hot_reset_storm"]
+        assert len(hr_patterns) == 1
+        assert hr_patterns[0].severity == "warning"
+
+    def test_three_plus_hot_resets_critical(self):
+        entries = _make_entries(
+            "L0", "Hot Reset", "L0", "Hot Reset", "L0", "Hot Reset", "L0",
+        )
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        hr_patterns = [p for p in result.patterns if p.name == "hot_reset_storm"]
+        assert len(hr_patterns) == 1
+        assert hr_patterns[0].severity == "critical"
+
+    def test_single_hot_reset_no_pattern(self):
+        entries = _make_entries("L0", "Hot Reset", "L0")
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze(entries)
+        pattern_names = [p.name for p in result.patterns]
+        assert "hot_reset_storm" not in pattern_names
+
+
+# ---------------------------------------------------------------------------
+# Speed/width degradation detection (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+class TestDegradationDetection:
+    """Tests for speed and width degradation detection."""
+
+    def _make_port_ctx(
+        self,
+        link_up=True,
+        link_rate="Gen4",
+        max_link_rate="Gen5",
+        neg_lnk_width=8,
+        cfg_lnk_width=16,
+    ):
+        ctx = MagicMock()
+        ctx.link_up = link_up
+        ctx.link_rate = link_rate
+        ctx.max_link_rate = max_link_rate
+        ctx.neg_lnk_width = neg_lnk_width
+        ctx.cfg_lnk_width = cfg_lnk_width
+        return ctx
+
+    def test_speed_degradation_one_gen_drop_warning(self):
+        """Gen5 configured but negotiated Gen4 -> warning."""
+        entries = _make_entries("L0", "L0")
+        port_ctx = self._make_port_ctx(
+            link_rate="Gen4", max_link_rate="Gen5",
+        )
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze_with_context(entries, port_ctx)
+
+        assert isinstance(result, LtssmContextualAnalysis)
+        speed_degs = [d for d in result.degradations if d.degradation_type == "speed"]
+        assert len(speed_degs) == 1
+        assert speed_degs[0].severity == "warning"
+        assert speed_degs[0].configured == "Gen5"
+        assert speed_degs[0].negotiated == "Gen4"
+
+    def test_speed_degradation_two_gen_drop_critical(self):
+        """Gen5 configured but negotiated Gen3 -> critical."""
+        entries = _make_entries("L0")
+        port_ctx = self._make_port_ctx(
+            link_rate="Gen3", max_link_rate="Gen5",
+        )
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze_with_context(entries, port_ctx)
+
+        speed_degs = [d for d in result.degradations if d.degradation_type == "speed"]
+        assert len(speed_degs) == 1
+        assert speed_degs[0].severity == "critical"
+
+    def test_width_degradation_x16_to_x4_critical(self):
+        """x16 configured but negotiated x4 -> critical (25% utilization)."""
+        entries = _make_entries("L0")
+        port_ctx = self._make_port_ctx(
+            neg_lnk_width=4, cfg_lnk_width=16,
+        )
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze_with_context(entries, port_ctx)
+
+        width_degs = [d for d in result.degradations if d.degradation_type == "width"]
+        assert len(width_degs) == 1
+        assert width_degs[0].severity == "critical"
+
+    def test_link_down_skips_degradation_checks(self):
+        """When link is down, no degradation checks should run."""
+        entries = _make_entries("Detect")
+        port_ctx = self._make_port_ctx(
+            link_up=False, link_rate="Gen1", max_link_rate="Gen5",
+            neg_lnk_width=0, cfg_lnk_width=16,
+        )
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze_with_context(entries, port_ctx)
+
+        assert result.degradations == []
+
+    def test_no_degradation_full_speed_and_width(self):
+        """No degradation when running at configured speed and width."""
+        entries = _make_entries("L0")
+        port_ctx = self._make_port_ctx(
+            link_rate="Gen5", max_link_rate="Gen5",
+            neg_lnk_width=16, cfg_lnk_width=16,
+        )
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze_with_context(entries, port_ctx)
+
+        assert result.degradations == []
+        assert result.overall_verdict == "CLEAN"
+
+    def test_combined_speed_and_width_degradation(self):
+        """Both speed and width degraded should both appear."""
+        entries = _make_entries("L0")
+        port_ctx = self._make_port_ctx(
+            link_rate="Gen3", max_link_rate="Gen5",
+            neg_lnk_width=4, cfg_lnk_width=16,
+        )
+        analyzer = LtssmPathAnalyzer()
+        result = analyzer.analyze_with_context(entries, port_ctx)
+
+        types = {d.degradation_type for d in result.degradations}
+        assert "speed" in types
+        assert "width" in types
+        assert result.overall_verdict == "FAIL"

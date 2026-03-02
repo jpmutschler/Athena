@@ -7,6 +7,7 @@ Produces a histogram of state durations and an overall pass/warn/fail verdict.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
@@ -64,6 +65,54 @@ class LtssmAnalysis:
     summary: str
 
 
+@dataclass(frozen=True)
+class DegradationInfo:
+    """Detected link parameter degradation.
+
+    Attributes:
+        degradation_type: ``"speed"`` or ``"width"``.
+        configured: Configured/max capability (e.g. ``"Gen5"`` or ``"x16"``).
+        negotiated: Actual negotiated value (e.g. ``"Gen4"`` or ``"x8"``).
+        severity: ``"warning"`` or ``"critical"``.
+        description: Human-readable explanation.
+    """
+
+    degradation_type: str
+    configured: str
+    negotiated: str
+    severity: str
+    description: str
+
+
+@dataclass(frozen=True)
+class LtssmContextualAnalysis:
+    """LTSSM analysis combined with link degradation context.
+
+    Attributes:
+        analysis: Base LTSSM pattern analysis.
+        degradations: Detected speed/width degradations.
+        overall_verdict: Combined verdict from patterns + degradation.
+        overall_summary: Combined human-readable summary.
+    """
+
+    analysis: LtssmAnalysis
+    degradations: list[DegradationInfo]
+    overall_verdict: str
+    overall_summary: str
+
+
+# ---- Gen number extraction -----------------------------------------------
+
+
+_GEN_PATTERN = re.compile(r"Gen(\d+)", re.IGNORECASE)
+
+
+def _extract_gen_number(gen_str: str) -> int:
+    """Extract generation number from a string like 'Gen5' or 'Gen4'."""
+    match = _GEN_PATTERN.search(gen_str)
+    return int(match.group(1)) if match else 0
+
+
 # ---- State classification helpers ----------------------------------------
 
 
@@ -86,6 +135,26 @@ def _is_l0(state_str: str) -> bool:
     if "L0s" in state_str or "TxL0s" in state_str:
         return False
     return "L0" in state_str
+
+
+def _is_l0s(state_str: str) -> bool:
+    """Match L0s / TxL0s states."""
+    return "L0s" in state_str or "TxL0s" in state_str
+
+
+def _is_l1(state_str: str) -> bool:
+    """Match L1 states, excluding combined L1/L2/L3 strings."""
+    if "L1/L2" in state_str or "L1/L3" in state_str:
+        return False
+    return "L1" in state_str
+
+
+def _is_compliance(state_str: str) -> bool:
+    return "Compliance" in state_str
+
+
+def _is_hot_reset(state_str: str) -> bool:
+    return "Hot Reset" in state_str
 
 
 def _is_eq(state_str: str) -> bool:
@@ -289,6 +358,192 @@ def _detect_eq_stuck(
     return patterns
 
 
+def _detect_l1_exit_issues(
+    entries: list[Any],
+    min_cycles: int = 3,
+) -> list[LtssmPattern]:
+    """Detect L1->Recovery->L1 cycles without sustained L0.
+
+    Counts transitions where the link leaves L1, enters Recovery, and returns
+    to L1 (or never reaches sustained L0).  3+ such cycles indicate the link
+    is unable to cleanly exit L1.
+    """
+    patterns: list[LtssmPattern] = []
+    cycle_count = 0
+    tracking_entries: list[Any] = []
+    in_l1_phase = False
+
+    for entry in entries:
+        state_str = entry.link_state_str
+
+        if _is_l1(state_str):
+            if not in_l1_phase:
+                cycle_count += 1
+                in_l1_phase = True
+            tracking_entries.append(entry)
+        elif _is_recovery(state_str):
+            in_l1_phase = False
+            tracking_entries.append(entry)
+        elif _is_l0(state_str):
+            # Sustained L0 resets the cycle counter
+            in_l1_phase = False
+            if cycle_count >= min_cycles:
+                patterns.append(LtssmPattern(
+                    name="l1_exit_issues",
+                    severity="warning",
+                    occurrences=cycle_count,
+                    description=(
+                        f"L1 exit issues: {cycle_count} L1->Recovery->L1 "
+                        f"cycles without sustained L0"
+                    ),
+                    entries=list(tracking_entries),
+                ))
+            cycle_count = 0
+            tracking_entries = []
+        else:
+            in_l1_phase = False
+            if cycle_count >= min_cycles:
+                patterns.append(LtssmPattern(
+                    name="l1_exit_issues",
+                    severity="warning",
+                    occurrences=cycle_count,
+                    description=(
+                        f"L1 exit issues: {cycle_count} L1->Recovery->L1 "
+                        f"cycles without sustained L0"
+                    ),
+                    entries=list(tracking_entries),
+                ))
+            cycle_count = 0
+            tracking_entries = []
+
+    # Flush trailing
+    if cycle_count >= min_cycles:
+        patterns.append(LtssmPattern(
+            name="l1_exit_issues",
+            severity="warning",
+            occurrences=cycle_count,
+            description=(
+                f"L1 exit issues: {cycle_count} L1->Recovery->L1 "
+                f"cycles without sustained L0"
+            ),
+            entries=list(tracking_entries),
+        ))
+
+    return patterns
+
+
+def _detect_l0s_oscillation(
+    entries: list[Any],
+    min_transitions: int = 10,
+) -> list[LtssmPattern]:
+    """Detect excessive L0<->L0s round-trips.
+
+    Counts transitions between L0 and L0s.  10+ round-trips without
+    leaving the L0/L0s pair suggest ASPM instability.
+    """
+    patterns: list[LtssmPattern] = []
+    round_trips = 0
+    tracking_entries: list[Any] = []
+    last_was_l0 = False
+    last_was_l0s = False
+
+    for entry in entries:
+        state_str = entry.link_state_str
+
+        if _is_l0(state_str):
+            if last_was_l0s:
+                round_trips += 1
+            tracking_entries.append(entry)
+            last_was_l0 = True
+            last_was_l0s = False
+        elif _is_l0s(state_str):
+            if last_was_l0:
+                round_trips += 1
+            tracking_entries.append(entry)
+            last_was_l0 = False
+            last_was_l0s = True
+        else:
+            if round_trips >= min_transitions:
+                patterns.append(LtssmPattern(
+                    name="l0s_oscillation",
+                    severity="warning",
+                    occurrences=round_trips,
+                    description=(
+                        f"L0s oscillation: {round_trips} L0<->L0s "
+                        f"round-trips detected"
+                    ),
+                    entries=list(tracking_entries),
+                ))
+            round_trips = 0
+            tracking_entries = []
+            last_was_l0 = False
+            last_was_l0s = False
+
+    # Flush trailing
+    if round_trips >= min_transitions:
+        patterns.append(LtssmPattern(
+            name="l0s_oscillation",
+            severity="warning",
+            occurrences=round_trips,
+            description=(
+                f"L0s oscillation: {round_trips} L0<->L0s "
+                f"round-trips detected"
+            ),
+            entries=list(tracking_entries),
+        ))
+
+    return patterns
+
+
+def _detect_compliance_mode(entries: list[Any]) -> list[LtssmPattern]:
+    """Detect entries in Compliance mode.
+
+    Any Compliance entry is flagged as warning; 2+ entries are critical
+    (indicates link training fell back to compliance repeatedly).
+    """
+    compliance_entries = [e for e in entries if _is_compliance(e.link_state_str)]
+    if not compliance_entries:
+        return []
+
+    count = len(compliance_entries)
+    severity = "critical" if count >= 2 else "warning"
+    return [LtssmPattern(
+        name="compliance_mode",
+        severity=severity,
+        occurrences=count,
+        description=(
+            f"Compliance mode: {count} Compliance state "
+            f"{'entries' if count > 1 else 'entry'} detected"
+        ),
+        entries=compliance_entries,
+    )]
+
+
+def _detect_hot_reset_storm(
+    entries: list[Any],
+    min_resets: int = 2,
+) -> list[LtssmPattern]:
+    """Detect Hot Reset storms.
+
+    Counts distinct Hot Reset sequences.  2 resets -> warning, 3+ -> critical.
+    """
+    reset_entries = [e for e in entries if _is_hot_reset(e.link_state_str)]
+    if len(reset_entries) < min_resets:
+        return []
+
+    count = len(reset_entries)
+    severity = "critical" if count >= 3 else "warning"
+    return [LtssmPattern(
+        name="hot_reset_storm",
+        severity=severity,
+        occurrences=count,
+        description=(
+            f"Hot Reset storm: {count} Hot Reset sequences detected"
+        ),
+        entries=reset_entries,
+    )]
+
+
 # ---- Histogram builder ---------------------------------------------------
 
 
@@ -372,6 +627,10 @@ class LtssmPathAnalyzer:
         patterns.extend(_detect_recovery_loops(entries))
         patterns.extend(_detect_detect_polling_oscillation(entries))
         patterns.extend(_detect_eq_stuck(entries))
+        patterns.extend(_detect_l1_exit_issues(entries))
+        patterns.extend(_detect_l0s_oscillation(entries))
+        patterns.extend(_detect_compliance_mode(entries))
+        patterns.extend(_detect_hot_reset_storm(entries))
 
         # Gen6 FLIT encoding informational note
         if generation == SwitchtecGen.GEN6:
@@ -399,6 +658,110 @@ class LtssmPathAnalyzer:
             verdict=verdict,
             summary=summary,
         )
+
+    def analyze_with_context(
+        self,
+        entries: list[Any],
+        port_ctx: Any,
+        generation: int | None = None,
+    ) -> LtssmContextualAnalysis:
+        """Analyze LTSSM entries with port context for degradation detection.
+
+        Args:
+            entries: LTSSM log entries.
+            port_ctx: Object with ``link_up``, ``link_rate``,
+                ``max_link_rate``, ``neg_lnk_width``, ``cfg_lnk_width``.
+            generation: Optional PCIe generation for Gen6 FLIT note.
+
+        Returns:
+            ``LtssmContextualAnalysis`` with patterns, degradations, and
+            combined verdict.
+        """
+        analysis = self.analyze(entries, generation=generation)
+        degradations = _detect_degradations(port_ctx)
+
+        # Combine verdict: worst of pattern verdict + degradation severity
+        combined_verdict = analysis.verdict
+        for deg in degradations:
+            if deg.severity == "critical":
+                combined_verdict = "FAIL"
+                break
+            if deg.severity == "warning" and combined_verdict == "CLEAN":
+                combined_verdict = "WARN"
+
+        # Build combined summary
+        parts = [analysis.summary]
+        if degradations:
+            deg_strs = [
+                f"{d.degradation_type}: {d.configured}->{d.negotiated}"
+                for d in degradations
+            ]
+            parts.append(f"Degradation: {', '.join(deg_strs)}")
+        overall_summary = "; ".join(parts)
+
+        return LtssmContextualAnalysis(
+            analysis=analysis,
+            degradations=degradations,
+            overall_verdict=combined_verdict,
+            overall_summary=overall_summary,
+        )
+
+
+def _detect_degradations(port_ctx: Any) -> list[DegradationInfo]:
+    """Compare negotiated vs configured link parameters.
+
+    Args:
+        port_ctx: Object with ``link_up``, ``link_rate``,
+            ``max_link_rate``, ``neg_lnk_width``, ``cfg_lnk_width``.
+
+    Returns:
+        List of detected degradation issues.
+    """
+    if not port_ctx.link_up:
+        return []
+
+    degradations: list[DegradationInfo] = []
+
+    # Speed degradation
+    neg_gen = _extract_gen_number(str(port_ctx.link_rate))
+    max_gen = _extract_gen_number(str(port_ctx.max_link_rate))
+
+    if neg_gen > 0 and max_gen > 0 and neg_gen < max_gen:
+        gen_drop = max_gen - neg_gen
+        severity = "critical" if gen_drop >= 2 else "warning"
+        degradations.append(DegradationInfo(
+            degradation_type="speed",
+            configured=str(port_ctx.max_link_rate),
+            negotiated=str(port_ctx.link_rate),
+            severity=severity,
+            description=(
+                f"Speed degradation: negotiated {port_ctx.link_rate} "
+                f"vs configured {port_ctx.max_link_rate} "
+                f"({gen_drop} gen drop)"
+            ),
+        ))
+
+    # Width degradation
+    neg_width = port_ctx.neg_lnk_width
+    cfg_width = port_ctx.cfg_lnk_width
+
+    if cfg_width > 0 and neg_width < cfg_width:
+        utilization = neg_width / cfg_width
+        # x4/x16 (25%) or worse is critical — severe bandwidth constraint
+        severity = "critical" if utilization <= 0.25 else "warning"
+        degradations.append(DegradationInfo(
+            degradation_type="width",
+            configured=f"x{cfg_width}",
+            negotiated=f"x{neg_width}",
+            severity=severity,
+            description=(
+                f"Width degradation: negotiated x{neg_width} "
+                f"vs configured x{cfg_width} "
+                f"({utilization:.0%} utilization)"
+            ),
+        ))
+
+    return degradations
 
 
 def _compute_verdict(patterns: list[LtssmPattern]) -> str:

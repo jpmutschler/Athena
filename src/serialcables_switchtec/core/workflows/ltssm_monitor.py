@@ -191,6 +191,31 @@ class LtssmMonitor(Recipe):
         analyzer = LtssmPathAnalyzer()
         analysis = analyzer.analyze(final_entries)
 
+        # Attempt contextual analysis with port status for degradation info
+        degradation_data: list[dict] = []
+        try:
+            port_statuses = dev.get_status()
+            port_status = next(
+                (ps for ps in port_statuses if ps.port.phys_id == port_id),
+                None,
+            )
+            if port_status is not None:
+                ctx_result = analyzer.analyze_with_context(
+                    final_entries, port_status,
+                )
+                degradation_data = [
+                    {
+                        "type": d.degradation_type,
+                        "configured": d.configured,
+                        "negotiated": d.negotiated,
+                        "severity": d.severity,
+                        "description": d.description,
+                    }
+                    for d in ctx_result.degradations
+                ]
+        except SwitchtecError:
+            pass
+
         if total_transitions == 0:
             status = StepStatus.PASS
             detail = "No LTSSM transitions detected — link is stable"
@@ -217,6 +242,7 @@ class LtssmMonitor(Recipe):
                     {"name": p.name, "severity": p.severity, "description": p.description}
                     for p in analysis.patterns
                 ],
+                "degradations": degradation_data,
                 "entries": [
                     {
                         "state": e.link_state_str,

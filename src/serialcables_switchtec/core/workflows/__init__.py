@@ -18,6 +18,8 @@ from serialcables_switchtec.core.workflows.latency_profile import LatencyProfile
 from serialcables_switchtec.core.workflows.link_health_check import LinkHealthCheck
 from serialcables_switchtec.core.workflows.link_training_debug import LinkTrainingDebug
 from serialcables_switchtec.core.workflows.loopback_sweep import LoopbackSweep
+from serialcables_switchtec.core.workflows.ltssm_continuous import LtssmContinuousCapture
+from serialcables_switchtec.core.workflows.ltssm_event_capture import LtssmEventCapture
 from serialcables_switchtec.core.workflows.ltssm_monitor import LtssmMonitor
 from serialcables_switchtec.core.workflows.models import RecipeCategory
 from serialcables_switchtec.core.workflows.osa_capture import OsaCapture
@@ -39,6 +41,8 @@ RECIPE_REGISTRY: dict[str, type[Recipe]] = {
     "link_health_check": LinkHealthCheck,
     "link_training_debug": LinkTrainingDebug,
     "loopback_sweep": LoopbackSweep,
+    "ltssm_continuous_capture": LtssmContinuousCapture,
+    "ltssm_event_capture": LtssmEventCapture,
     "ltssm_monitor": LtssmMonitor,
     "osa_capture": OsaCapture,
     "thermal_profile": ThermalProfile,

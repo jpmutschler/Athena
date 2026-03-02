@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import threading
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from serialcables_switchtec.core.workflows.link_health_check import LinkHealthCheck
 from serialcables_switchtec.core.workflows.link_training_debug import LinkTrainingDebug
+from serialcables_switchtec.core.workflows.ltssm_continuous import LtssmContinuousCapture
+from serialcables_switchtec.core.workflows.ltssm_event_capture import LtssmEventCapture
 from serialcables_switchtec.core.workflows.ltssm_monitor import LtssmMonitor
 from serialcables_switchtec.core.workflows.models import (
     StepCriticality,
@@ -461,5 +463,264 @@ class TestLtssmMonitor:
         cancel.is_set = cancel_in_loop
 
         results, summary = run_recipe(recipe, dev, cancel=cancel, port_id=0, duration_s=30)
+
+        assert summary.aborted is True
+
+
+# ---------------------------------------------------------------------------
+# LtssmContinuousCapture
+# ---------------------------------------------------------------------------
+
+
+class TestLtssmContinuousCapture:
+    """Tests for the LtssmContinuousCapture recipe."""
+
+    def test_parameters_returns_expected(self):
+        recipe = LtssmContinuousCapture()
+        params = recipe.parameters()
+        names = {p.name for p in params}
+        assert "port_id" in names
+        assert "duration_s" in names
+        assert "poll_interval_s" in names
+        assert "max_entries" in names
+
+    @patch("serialcables_switchtec.core.workflows.ltssm_continuous.time")
+    def test_happy_path_no_transitions(self, mock_time):
+        mock_time.monotonic.side_effect = [
+            0.0,    # start
+            0.0,    # after clear
+            0.0,    # poll_start
+            5.5,    # first loop -> break
+            5.5,    # step 1 result
+            5.5,    # step 2 cancel check
+            5.5,    # final summary
+        ]
+        mock_time.sleep.return_value = None
+
+        recipe = LtssmContinuousCapture()
+        dev = make_mock_device()
+        dev.diagnostics.ltssm_log.return_value = []
+
+        results, summary = run_recipe(
+            recipe, dev, port_id=0, duration_s=5,
+            poll_interval_s=0.5, max_entries=4096,
+        )
+        finals = final_results(results)
+
+        assert len(finals) == 3
+        assert finals[0].status == StepStatus.PASS   # Clear
+        assert finals[1].status == StepStatus.PASS   # Capture (0 entries)
+        assert finals[2].status == StepStatus.PASS   # Analysis
+        assert summary.failed == 0
+
+    @patch("serialcables_switchtec.core.workflows.ltssm_continuous.time")
+    def test_cancel_mid_capture(self, mock_time):
+        mock_time.monotonic.side_effect = [
+            0.0,    # start
+            0.0,    # after clear
+            0.0,    # poll_start
+            0.5,    # first loop elapsed
+        ]
+        mock_time.sleep.return_value = None
+
+        recipe = LtssmContinuousCapture()
+        dev = make_mock_device()
+        dev.diagnostics.ltssm_log.return_value = []
+        cancel = threading.Event()
+
+        original_is_set = cancel.is_set
+        call_count = 0
+
+        def cancel_in_loop():
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 3:
+                cancel.set()
+            return original_is_set()
+
+        cancel.is_set = cancel_in_loop
+
+        results, summary = run_recipe(
+            recipe, dev, cancel=cancel, port_id=0, duration_s=60,
+        )
+
+        assert summary.aborted is True
+
+    @patch("serialcables_switchtec.core.workflows.ltssm_continuous.time")
+    def test_wrap_during_capture(self, mock_time):
+        mock_time.monotonic.side_effect = [
+            0.0,    # start
+            0.0,    # after clear
+            0.0,    # poll_start
+            0.5,    # first loop
+            1.0,    # second loop
+            5.5,    # third loop -> break
+            5.5,    # step 1 result
+            5.5,    # step 2 cancel check
+            5.5,    # final summary
+        ]
+        mock_time.sleep.return_value = None
+
+        recipe = LtssmContinuousCapture()
+        dev = make_mock_device()
+
+        # First poll: entries 100-200, second: wrap to 10-20
+        batch1 = [MagicMock(timestamp=100, link_state_str="L0", link_rate="Gen5", link_width=16)]
+        batch2 = [MagicMock(timestamp=10, link_state_str="Recovery", link_rate="Gen5", link_width=16)]
+        dev.diagnostics.ltssm_log.side_effect = [batch1, batch2, []]
+
+        results, summary = run_recipe(
+            recipe, dev, port_id=0, duration_s=5,
+        )
+        finals = final_results(results)
+
+        capture_step = finals[1]
+        assert capture_step.data["wrap_count"] >= 1
+        assert capture_step.data["total_entries"] == 2
+
+    @patch("serialcables_switchtec.core.workflows.ltssm_continuous.time")
+    def test_final_analysis_integration(self, mock_time):
+        mock_time.monotonic.side_effect = [
+            0.0,    # start
+            0.0,    # after clear
+            0.0,    # poll_start
+            0.5,    # first loop
+            5.5,    # second loop -> break
+            5.5,    # step 1 result
+            5.5,    # step 2 cancel check
+            5.5,    # final summary
+        ]
+        mock_time.sleep.return_value = None
+
+        recipe = LtssmContinuousCapture()
+        dev = make_mock_device()
+
+        entries = [
+            MagicMock(timestamp=i, link_state_str="Recovery", link_rate="Gen5", link_width=16)
+            for i in range(5)
+        ]
+        dev.diagnostics.ltssm_log.side_effect = [entries, []]
+
+        results, summary = run_recipe(
+            recipe, dev, port_id=0, duration_s=5,
+        )
+        finals = final_results(results)
+
+        analysis_step = finals[2]
+        assert analysis_step.data["ltssm_verdict"] in ("FAIL", "WARN")
+
+
+# ---------------------------------------------------------------------------
+# LtssmEventCapture
+# ---------------------------------------------------------------------------
+
+
+class TestLtssmEventCapture:
+    """Tests for the LtssmEventCapture recipe."""
+
+    def test_parameters_returns_expected(self):
+        recipe = LtssmEventCapture()
+        params = recipe.parameters()
+        names = {p.name for p in params}
+        assert "port_id" in names
+        assert "duration_s" in names
+        assert "event_timeout_ms" in names
+
+    @patch("serialcables_switchtec.core.workflows.ltssm_event_capture.time")
+    def test_normal_trigger_flow(self, mock_time):
+        mock_time.monotonic.side_effect = [
+            0.0,    # start
+            0.0,    # after arm
+            0.0,    # wait_start
+            0.5,    # after first wait_and_capture
+            5.5,    # second loop -> break
+            5.5,    # step 1 result
+            5.5,    # step 2 cancel check
+            5.5,    # final summary
+        ]
+        mock_time.sleep.return_value = None
+
+        recipe = LtssmEventCapture()
+        dev = make_mock_device()
+        dev.events = MagicMock()
+        dev.events.event_ctl = MagicMock(return_value=0)
+
+        entries = [
+            MagicMock(timestamp=i, link_state_str="L0", link_rate="Gen5", link_width=16)
+            for i in range(3)
+        ]
+        dev.diagnostics.ltssm_log.return_value = entries
+        dev.events.wait_for_event = MagicMock(return_value=None)
+
+        results, summary = run_recipe(
+            recipe, dev, port_id=0, duration_s=5, event_timeout_ms=5000,
+        )
+        finals = final_results(results)
+
+        assert len(finals) == 3
+        assert finals[0].status == StepStatus.PASS   # Arm
+        assert finals[1].status == StepStatus.WARN   # Events captured
+        assert finals[1].data["trigger_count"] >= 1
+
+    @patch("serialcables_switchtec.core.workflows.ltssm_event_capture.time")
+    def test_timeout_no_events(self, mock_time):
+        mock_time.monotonic.side_effect = [
+            0.0,    # start
+            0.0,    # after arm
+            0.0,    # wait_start
+            5.5,    # after first wait -> break
+            5.5,    # step 1 result
+            5.5,    # step 2 cancel check
+            5.5,    # final summary
+        ]
+        mock_time.sleep.return_value = None
+
+        recipe = LtssmEventCapture()
+        dev = make_mock_device()
+        dev.events = MagicMock()
+        dev.events.event_ctl = MagicMock(return_value=0)
+        dev.events.wait_for_event = MagicMock(side_effect=TimeoutError("timeout"))
+
+        results, summary = run_recipe(
+            recipe, dev, port_id=0, duration_s=5, event_timeout_ms=5000,
+        )
+        finals = final_results(results)
+
+        assert finals[1].status == StepStatus.PASS   # No events = stable
+        assert finals[1].data["trigger_count"] == 0
+        assert finals[2].status == StepStatus.PASS   # No entries = stable
+
+    @patch("serialcables_switchtec.core.workflows.ltssm_event_capture.time")
+    def test_cancel_during_wait(self, mock_time):
+        mock_time.monotonic.side_effect = [
+            0.0,    # start
+            0.0,    # after arm
+            0.0,    # wait_start
+            0.5,    # after first wait
+        ]
+        mock_time.sleep.return_value = None
+
+        recipe = LtssmEventCapture()
+        dev = make_mock_device()
+        dev.events = MagicMock()
+        dev.events.event_ctl = MagicMock(return_value=0)
+        dev.events.wait_for_event = MagicMock(side_effect=TimeoutError("timeout"))
+
+        cancel = threading.Event()
+        original_is_set = cancel.is_set
+        call_count = 0
+
+        def cancel_in_loop():
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 3:
+                cancel.set()
+            return original_is_set()
+
+        cancel.is_set = cancel_in_loop
+
+        results, summary = run_recipe(
+            recipe, dev, cancel=cancel, port_id=0, duration_s=120,
+        )
 
         assert summary.aborted is True

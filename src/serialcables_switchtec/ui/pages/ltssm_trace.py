@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from nicegui import run, ui
 
+from serialcables_switchtec.core.ltssm_graph import build_state_graph
 from serialcables_switchtec.exceptions import SwitchtecError
 from serialcables_switchtec.ui.components.disconnected import show_disconnected
+from serialcables_switchtec.ui.components.ltssm_state_graph import ltssm_state_graph
 from serialcables_switchtec.ui.components.ltssm_timeline import ltssm_timeline
 from serialcables_switchtec.ui.layout import page_layout
 from serialcables_switchtec.ui.theme import COLORS
@@ -38,16 +40,30 @@ def ltssm_trace_page() -> None:
                     "Clear Log", icon="delete",
                 ).props("color=negative")
 
-        # --- Timeline chart card ---
+        # --- Tabbed chart view ---
         with ui.card().classes("w-full q-pa-md q-mb-md"):
-            ui.label("LTSSM Timeline").classes("text-h6 q-mb-sm")
-            timeline_container = ui.column().classes("w-full")
-            with timeline_container:
-                ui.label(
-                    "Capture a log to view the LTSSM timeline."
-                ).classes("text-subtitle2").style(
-                    f"color: {COLORS.text_secondary};"
-                )
+            with ui.tabs().classes("w-full") as tabs:
+                timeline_tab = ui.tab("Timeline", icon="timeline")
+                graph_tab = ui.tab("State Graph", icon="hub")
+
+            with ui.tab_panels(tabs, value=timeline_tab).classes("w-full"):
+                with ui.tab_panel(timeline_tab):
+                    timeline_container = ui.column().classes("w-full")
+                    with timeline_container:
+                        ui.label(
+                            "Capture a log to view the LTSSM timeline."
+                        ).classes("text-subtitle2").style(
+                            f"color: {COLORS.text_secondary};"
+                        )
+
+                with ui.tab_panel(graph_tab):
+                    graph_container = ui.column().classes("w-full")
+                    with graph_container:
+                        ui.label(
+                            "Capture a log to view the state graph."
+                        ).classes("text-subtitle2").style(
+                            f"color: {COLORS.text_secondary};"
+                        )
 
         # --- Log entries table card ---
         with ui.card().classes("w-full q-pa-md"):
@@ -83,6 +99,19 @@ def ltssm_trace_page() -> None:
                     else:
                         ui.label(
                             "No LTSSM transitions captured."
+                        ).classes("text-subtitle2").style(
+                            f"color: {COLORS.text_secondary};"
+                        )
+
+                # Render the state graph
+                graph_container.clear()
+                with graph_container:
+                    if entries:
+                        graph = build_state_graph(entries)
+                        ltssm_state_graph(graph)
+                    else:
+                        ui.label(
+                            "No LTSSM transitions for graph."
                         ).classes("text-subtitle2").style(
                             f"color: {COLORS.text_secondary};"
                         )
@@ -203,6 +232,14 @@ def ltssm_trace_page() -> None:
                 with timeline_container:
                     ui.label(
                         "Log cleared. Capture a new log to view the timeline."
+                    ).classes("text-subtitle2").style(
+                        f"color: {COLORS.text_secondary};"
+                    )
+
+                graph_container.clear()
+                with graph_container:
+                    ui.label(
+                        "Log cleared. Capture a new log to view the state graph."
                     ).classes("text-subtitle2").style(
                         f"color: {COLORS.text_secondary};"
                     )
