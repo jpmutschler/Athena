@@ -20,6 +20,7 @@
 10. [LTSSM Trace](#10-ltssm-trace)
 11. [Performance Monitoring](#11-performance-monitoring)
 12. [Workflows](#12-workflows)
+12a. [Workflow Builder](#12a-workflow-builder)
 13. [Fabric / Topology Management](#13-fabric--topology-management)
 14. [Error Injection](#14-error-injection)
 15. [BER Testing](#15-ber-testing)
@@ -999,6 +1000,93 @@ The following table lists all 18 implemented recipes with their category, name, 
 |---|---|---|---|---|
 | 17 | **OSA Link Training Capture** | ~10s | Configure and run an OSA (Ordered Set Analyzer) capture to record link training ordered sets. | Stack ID, Lane ID |
 | 18 | **Switch Thermal Profile** | 60s (configurable) | Monitor die temperature sensors over time and report per-sensor min/max/avg statistics. | Duration |
+
+---
+
+## 12a. Workflow Builder
+
+**Route:** `/workflow-builder`
+**Navigation label:** Workflow Builder
+**Icon:** construction
+
+The Workflow Builder page lets you compose multiple recipes into a single multi-step workflow, save it as a reusable JSON file, and run it with one click. Workflows are saved to `~/.switchtec/workflows/` and can be shared between team members or version-controlled.
+
+### Use Cases
+
+- **"Morning checkout"** workflow: Link Health Check -> Thermal Profile -> BER Soak
+- **"New card qualification"**: All-Port Sweep -> EQ Report -> Eye Scan -> Firmware Validation
+- **"Debug sequence"**: Link Training Debug -> LTSSM Monitor -> Error Injection Recovery
+
+### Workflow Metadata Section
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| **Workflow Name** | Text input | Yes | Name for the workflow (used as the filename when saved) |
+| **Description** | Text area | No | Optional description of what the workflow does |
+| **Abort on Critical Failure** | Switch | No (default: on) | When enabled, the workflow stops after a recipe step fails with CRITICAL criticality. Non-critical failures always continue. |
+
+### Step List
+
+The step list shows each recipe in the workflow sequence:
+
+1. **Add Recipe** dropdown: Select from all 18 available recipes.
+2. **Add Step** button: Appends the selected recipe to the step list.
+3. Each step card shows:
+   - Step number and recipe name
+   - Optional label override
+   - Parameter inputs auto-generated from the recipe's parameter definitions
+   - Move Up / Move Down buttons to reorder
+   - Remove button to delete the step
+
+### Actions
+
+| Button | Action |
+|---|---|
+| **Save** | Saves the current workflow to `~/.switchtec/workflows/` as a JSON file |
+| **Load** | Opens a dropdown of saved workflows; selecting one populates the builder |
+| **Delete** | Deletes the currently loaded workflow from disk |
+| **Run Workflow** | Executes the workflow steps sequentially on the connected device |
+
+### Running a Workflow
+
+When you click **Run Workflow**:
+
+1. The executor validates all recipe keys and parameters up front.
+2. Each recipe runs sequentially, yielding step-by-step results.
+3. The RecipeStepper displays results prefixed with the workflow context: `"[1/3] Link Health Check > Read port status"`.
+4. Between recipes, the executor checks for cancellation.
+5. If **Abort on Critical Failure** is enabled and a step fails with CRITICAL criticality, remaining recipes are skipped.
+6. On completion, a workflow summary banner shows total/completed/skipped recipe counts.
+
+### CLI Access
+
+Workflows can also be managed and run from the CLI:
+
+```bash
+# List saved workflows
+athena recipe list-workflows
+
+# Run a saved workflow
+athena recipe run-workflow morning_checkout -d /dev/switchtec0
+```
+
+### Workflow JSON Format
+
+Saved workflows use this structure:
+
+```json
+{
+  "name": "Morning Checkout",
+  "description": "Daily port validation sequence",
+  "steps": [
+    {"recipe_key": "link_health_check", "label": "", "params": {"port_id": 0}},
+    {"recipe_key": "thermal_profile", "label": "", "params": {"duration_s": 10}}
+  ],
+  "abort_on_critical_fail": true,
+  "created_at": "2026-03-01T12:00:00+00:00",
+  "updated_at": "2026-03-01T12:00:00+00:00"
+}
+```
 
 ---
 

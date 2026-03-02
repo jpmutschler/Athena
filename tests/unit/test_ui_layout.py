@@ -59,4 +59,4 @@ class TestNavGroups:
 
     def test_total_page_count(self):
         total = sum(len(items) for _, _, items in _NAV_GROUPS)
-        assert total == 17, f"Expected 17 pages, got {total}"
+        assert total == 18, f"Expected 18 pages, got {total}"

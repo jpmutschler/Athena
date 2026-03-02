@@ -220,3 +220,118 @@ def recipe_run(
         sys.exit(1)
     elif summary and summary.aborted:
         sys.exit(2)
+
+
+@recipe.command("list-workflows")
+def list_workflows() -> None:
+    """List saved workflow definitions."""
+    from serialcables_switchtec.core.workflows.workflow_storage import WorkflowStorage
+
+    storage = WorkflowStorage()
+    names = storage.list_workflows()
+    if not names:
+        click.echo("No saved workflows.")
+        return
+
+    for name in names:
+        try:
+            defn = storage.load(name)
+            step_count = len(defn.steps)
+            desc = defn.description or "(no description)"
+            click.echo(f"  {name:<30s}  {step_count} step(s)  {desc}")
+        except Exception:
+            click.echo(f"  {name:<30s}  (error loading)")
+
+
+@recipe.command("run-workflow")
+@click.argument("workflow_name")
+@click.option(
+    "--device", "-d",
+    default=None,
+    help="Device path (e.g., /dev/switchtec0).",
+)
+def run_workflow(workflow_name: str, device: str | None) -> None:
+    """Run a saved workflow by name."""
+    from serialcables_switchtec.core.workflows.workflow_executor import WorkflowExecutor
+    from serialcables_switchtec.core.workflows.workflow_storage import WorkflowStorage
+
+    storage = WorkflowStorage()
+
+    try:
+        definition = storage.load(workflow_name)
+    except FileNotFoundError:
+        click.echo(f"Workflow not found: {workflow_name}", err=True)
+        available = storage.list_workflows()
+        if available:
+            click.echo(f"Available: {', '.join(available)}", err=True)
+        raise SystemExit(2)
+
+    if device is None:
+        click.echo("No device specified. Use --device/-d.", err=True)
+        raise SystemExit(2)
+
+    from serialcables_switchtec.core.device import SwitchtecDevice
+
+    try:
+        dev = SwitchtecDevice.open(device)
+    except Exception as exc:
+        click.echo(f"Cannot open device {device}: {exc}", err=True)
+        raise SystemExit(2) from exc
+
+    cancel = threading.Event()
+    wf_summary = None
+    executor = WorkflowExecutor()
+
+    try:
+        try:
+            gen = executor.run(definition, dev, cancel)
+            try:
+                while True:
+                    result = next(gen)
+                    status_char = {
+                        StepStatus.RUNNING: "...",
+                        StepStatus.PASS: "PASS",
+                        StepStatus.FAIL: "FAIL",
+                        StepStatus.WARN: "WARN",
+                        StepStatus.INFO: "INFO",
+                        StepStatus.SKIP: "SKIP",
+                    }.get(result.status, "???")
+                    click.echo(
+                        f"  [{status_char}] {result.step}: {result.detail}",
+                        err=True,
+                    )
+            except StopIteration as stop:
+                wf_summary = stop.value
+        except ValueError as exc:
+            click.echo(f"Workflow validation error: {exc}", err=True)
+            raise SystemExit(2) from exc
+        except Exception as exc:
+            click.echo(f"Workflow failed: {exc}", err=True)
+            raise SystemExit(1) from exc
+
+        if wf_summary is not None:
+            click.echo(
+                f"\n{wf_summary.workflow_name}: "
+                f"{wf_summary.completed_recipes}/{wf_summary.total_recipes} recipes completed "
+                f"({'aborted' if wf_summary.aborted else 'finished'}) "
+                f"({wf_summary.elapsed_s:.1f}s)"
+            )
+            for step_sum in wf_summary.step_summaries:
+                if step_sum.skipped:
+                    click.echo(f"  [{step_sum.step_index + 1}] {step_sum.recipe_name}: SKIPPED")
+                elif step_sum.recipe_summary:
+                    rs = step_sum.recipe_summary
+                    click.echo(
+                        f"  [{step_sum.step_index + 1}] {step_sum.recipe_name}: "
+                        f"{rs.passed}P {rs.failed}F {rs.warnings}W ({rs.elapsed_s:.1f}s)"
+                    )
+    finally:
+        dev.close()
+
+    if wf_summary and any(
+        s.recipe_summary and s.recipe_summary.failed > 0
+        for s in wf_summary.step_summaries
+    ):
+        sys.exit(1)
+    elif wf_summary and wf_summary.aborted:
+        sys.exit(2)

@@ -63,6 +63,7 @@ _NAV_GROUPS: list[tuple[str, str, list[tuple[str, str, str]]]] = [
         "play_circle",
         [
             ("Workflows", "/workflows", "play_circle"),
+            ("Workflow Builder", "/workflow-builder", "construction"),
         ],
     ),
 ]

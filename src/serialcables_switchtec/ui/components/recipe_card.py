@@ -7,7 +7,7 @@ from collections.abc import Callable
 from nicegui import ui
 
 from serialcables_switchtec.core.workflows.base import Recipe
-from serialcables_switchtec.core.workflows.models import RecipeParameter
+from serialcables_switchtec.ui.components.param_inputs import extract_value, param_input
 from serialcables_switchtec.ui.theme import COLORS
 
 
@@ -46,7 +46,7 @@ def recipe_card(
             ui.separator().classes("q-my-xs")
             with ui.column().classes("w-full q-gutter-xs"):
                 for p in params:
-                    widget = _param_input(p)
+                    widget = param_input(p)
                     param_widgets[p.name] = widget
 
         ui.separator().classes("q-my-sm")
@@ -55,49 +55,9 @@ def recipe_card(
             kwargs = {}
             for p in params:
                 w = param_widgets[p.name]
-                kwargs[p.name] = _extract_value(p, w)
+                kwargs[p.name] = extract_value(p, w)
             on_run(recipe, kwargs)
 
         ui.button("Run", icon="play_arrow", on_click=_on_click).props(
             "unelevated dense color=positive"
         )
-
-
-def _param_input(param: RecipeParameter) -> object:
-    """Create a NiceGUI input widget for a recipe parameter."""
-    if param.param_type == "select" and param.choices:
-        options = {c: c for c in param.choices}
-        return ui.select(
-            options=options,
-            label=param.display_name,
-            value=param.default or param.choices[0],
-        ).classes("w-full")
-
-    if param.param_type == "bool":
-        return ui.switch(param.display_name, value=bool(param.default))
-
-    if param.param_type in ("int", "float"):
-        return ui.number(
-            label=param.display_name,
-            value=param.default if param.default is not None else 0,
-            min=param.min_val,
-            max=param.max_val,
-        ).classes("w-full")
-
-    # Default: text input
-    return ui.input(
-        label=param.display_name,
-        value=str(param.default) if param.default is not None else "",
-    ).classes("w-full")
-
-
-def _extract_value(param: RecipeParameter, widget: object) -> object:
-    """Extract the current value from a parameter widget."""
-    val = getattr(widget, "value", None)
-    if param.param_type == "int":
-        return int(val or 0)
-    if param.param_type == "float":
-        return float(val or 0)
-    if param.param_type == "bool":
-        return bool(val)
-    return val

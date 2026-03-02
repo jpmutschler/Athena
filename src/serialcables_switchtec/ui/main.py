@@ -22,6 +22,7 @@ from serialcables_switchtec.ui.pages.ber_testing import ber_testing_page
 from serialcables_switchtec.ui.pages.equalization import equalization_page
 from serialcables_switchtec.ui.pages.fabric_view import fabric_view_page
 from serialcables_switchtec.ui.pages.margin_testing import margin_testing_page
+from serialcables_switchtec.ui.pages.workflow_builder import workflow_builder_page
 from serialcables_switchtec.ui.pages.workflows import workflows_page
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -98,3 +99,7 @@ def register_pages() -> None:
     @ui.page("/fabric-view")
     def fabric_view() -> None:
         fabric_view_page()
+
+    @ui.page("/workflow-builder")
+    def workflow_builder() -> None:
+        workflow_builder_page()

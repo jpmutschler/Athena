@@ -1,8 +1,8 @@
 # Workflow Recipes -- Architecture Design
 
-**Status:** Architecture approved, implementation deferred until UI is further along
+**Status:** Implemented (18 recipes + Workflow Builder)
 **Date:** 2026-03-01
-**Last updated:** 2026-03-01 (PCIe validation engineer review feedback incorporated)
+**Last updated:** 2026-03-01 (Workflow Builder implemented, PCIe validation engineer review feedback incorporated)
 **Context:** PCIe validation engineer review identified that UI users need one-click access to common validation workflows, not raw CLI-level control. This is especially important for demos and monitoring-focused users.
 
 ---
@@ -713,10 +713,81 @@ These were open questions in the original architecture. Resolved per PCIe valida
 
 ---
 
+## Workflow Builder (Recipe Chaining) -- Implemented
+
+Open Question #3 ("Recipe chaining") is now resolved. The Workflow Builder allows users to compose recipes into multi-step sequences and run them as a single workflow.
+
+### Architecture
+
+```
+core/workflows/
+  workflow_models.py     # WorkflowStep, WorkflowDefinition, WorkflowStepSummary, WorkflowSummary (Pydantic, frozen)
+  workflow_storage.py    # Save/load/list/delete JSON from ~/.switchtec/workflows/ (path-confined)
+  workflow_executor.py   # Sequential runner with prefixed results, abort-on-critical, cancel propagation
+
+ui/components/
+  param_inputs.py            # Extracted shared param_input() + extract_value()
+  workflow_step_editor.py    # Single step row editor component
+
+ui/pages/
+  workflow_builder.py    # Full builder page: metadata, step list, save/load/delete/run
+
+cli/
+  recipe.py              # list-workflows and run-workflow subcommands
+```
+
+### Key Design Decisions
+
+- **Pydantic models with `frozen=True`** for immutability (consistent with RecipeResult, RecipeSummary)
+- **Field names:** `recipe_key` (not `recipe_name`) to match RECIPE_REGISTRY keys
+- **`abort_on_critical_fail`** only triggers on `StepCriticality.CRITICAL` failures, not all `StepStatus.FAIL`
+- **Path confinement** in storage via `resolve().is_relative_to()` to prevent directory traversal
+- **Up-front param validation** against recipe's declared `parameters()` before any step runs
+- **Result prefixing:** `"[1/3] RecipeName > StepName"` so existing RecipeStepper renders workflow context without modification
+- **Same thread+queue+timer pattern** as existing workflows.py page for UI execution
+- **Shared `param_inputs.py`** extracted from recipe_card.py to share input generation between recipe card and workflow step editor
+
+### Workflow Persistence
+
+Workflows are saved as JSON in `~/.switchtec/workflows/` (one file per workflow, named by slug):
+
+```json
+{
+  "name": "Morning Checkout",
+  "description": "Daily port validation sequence",
+  "steps": [
+    {"recipe_key": "link_health_check", "label": "", "params": {"port_id": 0}},
+    {"recipe_key": "thermal_profile", "label": "", "params": {"duration_s": 10}}
+  ],
+  "abort_on_critical_fail": true,
+  "created_at": "2026-03-01T12:00:00+00:00",
+  "updated_at": "2026-03-01T12:00:00+00:00"
+}
+```
+
+### Executor Protocol
+
+The `WorkflowExecutor` uses the same generator protocol as individual recipes:
+- Yields `RecipeResult` objects (with prefixed step names) for each step of each recipe
+- Returns `WorkflowSummary` via `StopIteration.value`
+- Accepts a `threading.Event` cancel token, checked between recipes
+- On exception: calls `recipe.cleanup()`, yields a FAIL result, optionally aborts
+
+### Deferred Features (Tier 2+)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Data flow mapping (A.data["temp"] -> B.kwargs["threshold"]) | Deferred | `depends_on` field on RecipeParameter exists but unused |
+| Conditional skip/branch on step status | Deferred | Would need on_fail/on_warn fields on WorkflowStep |
+| Parallel recipe execution (A and B concurrently, then C) | Deferred | Would need DAG model, not sequential list |
+| Loops/retry with backoff | Deferred | |
+| Drag-and-drop canvas UI | Deferred | Current UI uses list-based step editor |
+| REST API CRUD endpoints for workflows | Deferred | CLI and UI only for now |
+
+---
+
 ## Open Questions (resolve during implementation)
 
 1. **History UI:** How should the dashboard present recipe history? Options: sidebar timeline, dedicated history page, or inline "last run" badge on each recipe card.
 
 2. **Export format:** Should recipe results be exportable beyond JSON? CSV for BER data, PDF for reports? Defer until user feedback.
-
-3. **Recipe chaining:** Should users be able to compose recipes into sequences (e.g., "run Link Health Check, then BER Soak, then EQ Report")? Defer — start with individual recipes.

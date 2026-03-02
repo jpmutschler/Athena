@@ -586,6 +586,25 @@ athena mrpc cmd /dev/switchtec0 0x1 --payload deadbeef --resp-len 64
 athena --json-output mrpc cmd /dev/switchtec0 0x1 --resp-len 16
 ```
 
+### Recipe & Workflow Commands
+
+```bash
+# List all available validation recipes
+athena recipe list
+
+# Show parameters for a recipe
+athena recipe params link_health_check
+
+# Run a recipe
+athena recipe run link_health_check -d /dev/switchtec0 -p port_id=0
+
+# List saved multi-recipe workflows
+athena recipe list-workflows
+
+# Run a saved workflow
+athena recipe run-workflow morning_checkout -d /dev/switchtec0
+```
+
 ### Server Command
 
 ```bash
@@ -754,8 +773,12 @@ The Athena NiceGUI dashboard provides a browser-based interface for device manag
 | Eye Diagram | Interactive eye diagram chart with capture controls |
 | LTSSM Trace | Timeline visualization of LTSSM state transitions |
 | Performance | Bandwidth and latency counter display |
+| Workflows | 18 pre-composed validation recipes with live progress |
+| Workflow Builder | Create, save, load, and run multi-recipe workflows |
 
 **Visual components:** device cards, port grids, eye diagram charts, and LTSSM timeline widgets. Dark theme with Serial Cables branding.
+
+**Workflow Builder:** Compose multi-recipe sequences (e.g., "morning checkout": link health -> thermal -> BER soak) without writing Python. Save workflows as shareable JSON files in `~/.switchtec/workflows/`. Run from the browser UI or CLI.
 
 ---
 
@@ -1119,7 +1142,14 @@ src/serialcables_switchtec/
 |   |-- fabric.py               # FabricManager: port control/config, bind/unbind, events
 |   |-- monitor.py              # LinkHealthMonitor: continuous BW and event counter sampling
 |   |-- osa.py                  # OrderedSetAnalyzer: type/pattern config, capture control
-|   +-- performance.py          # PerformanceManager: bandwidth counters, latency
+|   |-- performance.py          # PerformanceManager: bandwidth counters, latency
+|   +-- workflows/              # 18 validation recipes + workflow builder
+|       |-- __init__.py         # RECIPE_REGISTRY dict, get_recipe()
+|       |-- base.py             # Recipe ABC with cancel token
+|       |-- models.py           # RecipeResult, RecipeSummary, RecipeParameter, StepStatus
+|       |-- workflow_models.py  # WorkflowStep, WorkflowDefinition, WorkflowSummary (frozen)
+|       |-- workflow_storage.py # Save/load/list/delete JSON from ~/.switchtec/workflows/
+|       +-- workflow_executor.py # Sequential runner with prefixed results
 |
 |-- models/                     # Pydantic models (frozen, immutable)
 |   |-- device.py               # DeviceInfo, PortId, PortStatus, DeviceSummary
@@ -1140,7 +1170,8 @@ src/serialcables_switchtec/
 |   |-- fabric.py               # port-control, port-config, bind, unbind, clear-events, csr-read, csr-write
 |   |-- mrpc.py                 # Raw MRPC command interface
 |   |-- osa.py                  # start, stop, config-type, config-pattern, capture, read, dump-config
-|   +-- perf.py                 # bw (--watch), latency-setup, latency
+|   |-- perf.py                 # bw (--watch), latency-setup, latency
+|   +-- recipe.py               # list, params, run, list-workflows, run-workflow
 |
 |-- api/                        # FastAPI REST + WebSocket API
 |   |-- app.py                  # Application factory, CORS, lifespan, auth
@@ -1170,14 +1201,17 @@ src/serialcables_switchtec/
 |   |   |-- device_card.py
 |   |   |-- port_grid.py
 |   |   |-- eye_chart.py
-|   |   +-- ltssm_timeline.py
+|   |   |-- ltssm_timeline.py
+|   |   |-- param_inputs.py     # Shared parameter widget factory (used by recipe card + workflow builder)
+|   |   +-- workflow_step_editor.py  # Single-step editor row for workflow builder
 |   +-- pages/                  # Full-page views
 |       |-- discovery.py
 |       |-- dashboard.py
 |       |-- ports.py
 |       |-- eye_diagram.py
 |       |-- ltssm_trace.py
-|       +-- performance.py
+|       |-- performance.py
+|       +-- workflow_builder.py # Multi-recipe workflow composer
 |
 +-- utils/
     +-- logging.py              # structlog configuration
