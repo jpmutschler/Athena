@@ -45,3 +45,16 @@ def extract_value(param: RecipeParameter, widget: object) -> object:
     if param.param_type == "bool":
         return bool(val)
     return val
+
+
+def binding_input(param_name: str, current_value: str = "") -> object:
+    """Create a text input for a parameter binding reference string.
+
+    Returns a ``ui.input`` widget whose value is a reference expression
+    like ``steps[0].data.temperature``.
+    """
+    return ui.input(
+        label=f"Bind '{param_name}' to",
+        value=current_value,
+        placeholder="e.g. steps[0].data.temperature",
+    ).classes("w-full").props("dense")

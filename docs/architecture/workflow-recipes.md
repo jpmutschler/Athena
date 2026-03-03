@@ -1,8 +1,8 @@
 # Workflow Recipes -- Architecture Design
 
-**Status:** Implemented (18 recipes + Workflow Builder)
+**Status:** Implemented (18 recipes + Workflow Builder + Control Flow)
 **Date:** 2026-03-01
-**Last updated:** 2026-03-01 (Workflow Builder implemented, PCIe validation engineer review feedback incorporated)
+**Last updated:** 2026-03-03 (Workflow control flow: on-fail handling, data passing, loops, conditions)
 **Context:** PCIe validation engineer review identified that UI users need one-click access to common validation workflows, not raw CLI-level control. This is especially important for demos and monitoring-focused users.
 
 ---
@@ -723,19 +723,23 @@ Open Question #3 ("Recipe chaining") is now resolved. The Workflow Builder allow
 
 ```
 core/workflows/
-  workflow_models.py     # WorkflowStep, WorkflowDefinition, WorkflowStepSummary, WorkflowSummary (Pydantic, frozen)
-  workflow_storage.py    # Save/load/list/delete JSON from ~/.switchtec/workflows/ (path-confined)
-  workflow_executor.py   # Sequential runner with prefixed results, abort-on-critical, cancel propagation
+  workflow_models.py       # WorkflowStep, WorkflowDefinition, WorkflowStepSummary, WorkflowSummary (Pydantic, frozen)
+                           # OnFailAction enum, LoopConfig, StepCondition models
+  workflow_storage.py      # Save/load/list/delete JSON from ~/.switchtec/workflows/ (path-confined)
+  workflow_executor.py     # Sequential runner with on-fail, loops, conditions, GOTO, cycle detection
+  workflow_expressions.py  # Safe regex-based expression parser for step data references (no eval())
+  workflow_context.py      # Execution context: inter-step data store, ref resolution, condition eval
 
 ui/components/
-  param_inputs.py            # Extracted shared param_input() + extract_value()
-  workflow_step_editor.py    # Single step row editor component
+  param_inputs.py            # Extracted shared param_input() + extract_value() + binding_input()
+  workflow_step_editor.py    # Single step row editor with collapsible Advanced panel
 
 ui/pages/
-  workflow_builder.py    # Full builder page: metadata, step list, save/load/delete/run
+  workflow_builder.py          # Full builder page: metadata, step list, save/load/delete/run
+  workflow_builder_helpers.py  # Pure conversion helpers (step_data <-> model, advanced widget collection)
 
 cli/
-  recipe.py              # list-workflows and run-workflow subcommands
+  recipe.py              # list-workflows and run-workflow subcommands (shows skip reasons + loop info)
 ```
 
 ### Key Design Decisions
@@ -744,26 +748,44 @@ cli/
 - **Field names:** `recipe_key` (not `recipe_name`) to match RECIPE_REGISTRY keys
 - **`abort_on_critical_fail`** only triggers on `StepCriticality.CRITICAL` failures, not all `StepStatus.FAIL`
 - **Path confinement** in storage via `resolve().is_relative_to()` to prevent directory traversal
-- **Up-front param validation** against recipe's declared `parameters()` before any step runs
+- **Up-front validation** of recipe keys, params, duplicate labels, and GOTO targets before any step runs
 - **Result prefixing:** `"[1/3] RecipeName > StepName"` so existing RecipeStepper renders workflow context without modification
 - **Same thread+queue+timer pattern** as existing workflows.py page for UI execution
 - **Shared `param_inputs.py`** extracted from recipe_card.py to share input generation between recipe card and workflow step editor
+- **Safe expression parser** using regex only (no `eval()`). Dunder paths rejected. Fail-open semantics for unresolvable references.
+- **GOTO cycle detection** with a max visit count of 3 per step index to prevent infinite fail-goto loops
+- **Backward compatibility:** All new fields (on_fail, param_bindings, loop, condition) have defaults matching the original sequential behavior. Existing JSON workflows deserialize and run unchanged.
 
 ### Workflow Persistence
 
-Workflows are saved as JSON in `~/.switchtec/workflows/` (one file per workflow, named by slug):
+Workflows are saved as JSON in `~/.switchtec/workflows/` (one file per workflow, named by slug). All advanced fields are optional; existing JSON files without them continue to work unchanged.
 
 ```json
 {
   "name": "Morning Checkout",
   "description": "Daily port validation sequence",
   "steps": [
-    {"recipe_key": "link_health_check", "label": "", "params": {"port_id": 0}},
-    {"recipe_key": "thermal_profile", "label": "", "params": {"duration_s": 10}}
+    {
+      "recipe_key": "link_health_check",
+      "label": "health",
+      "params": {"port_id": 0}
+    },
+    {
+      "recipe_key": "ber_soak_test",
+      "label": "",
+      "params": {"port_id": 0, "duration_s": 30},
+      "on_fail": "continue",
+      "param_bindings": {},
+      "condition": {
+        "ref": "steps[health].data.link_up",
+        "operator": "eq",
+        "value": true
+      }
+    }
   ],
   "abort_on_critical_fail": true,
   "created_at": "2026-03-01T12:00:00+00:00",
-  "updated_at": "2026-03-01T12:00:00+00:00"
+  "updated_at": "2026-03-03T12:00:00+00:00"
 }
 ```
 
@@ -772,18 +794,54 @@ Workflows are saved as JSON in `~/.switchtec/workflows/` (one file per workflow,
 The `WorkflowExecutor` uses the same generator protocol as individual recipes:
 - Yields `RecipeResult` objects (with prefixed step names) for each step of each recipe
 - Returns `WorkflowSummary` via `StopIteration.value`
-- Accepts a `threading.Event` cancel token, checked between recipes
+- Accepts a `threading.Event` cancel token, checked between recipes and loop iterations
 - On exception: calls `recipe.cleanup()`, yields a FAIL result, optionally aborts
 
-### Deferred Features (Tier 2+)
+#### Execution Flow
+
+1. **Validation:** Verify recipe keys, params, label uniqueness, and GOTO target existence
+2. **Build context:** Create `WorkflowExecutionContext` with label index
+3. **While loop** (not `for`; supports GOTO jumps and SKIP_NEXT):
+   - Check cancellation
+   - Check GOTO cycle detection (max 3 visits per step)
+   - Evaluate step condition (skip if not met)
+   - Resolve parameter bindings from context
+   - Execute loop or single step
+   - Store step output data in context
+   - Handle on-fail action (abort / continue / skip_next / goto)
+
+#### Inter-Step Data Passing
+
+Each recipe step yields `RecipeResult` objects with optional `data` dicts. After a step completes, all `data` dicts from its results are merged into the execution context. Subsequent steps can reference this data via parameter bindings (e.g., `steps[0].data.temperature`).
+
+#### Expression System (`workflow_expressions.py`)
+
+Safe regex-based parser supporting: `steps[N].data.key`, `steps[-N].data.key`, `steps[label].data.key`, `steps[N].failed`, `steps[N].passed`, `steps[N].status`. Nested key paths traverse dicts and lists. Dunder paths are rejected. Returns `None` on any resolution failure (never throws).
+
+#### Loop Execution
+
+- **Count:** Run the recipe N times with iteration prefixes
+- **Over values:** Inject each value from a list into a named parameter
+- **Until:** Repeat until a reference equals a target value, capped by `max_iterations` (default 100)
+- Cancel checked at each iteration boundary. Critical fail with `on_fail=ABORT` breaks the loop.
+
+### Implemented Control Flow Features (Tier 2)
+
+| Feature | Status | Implementation |
+|---------|--------|----------------|
+| Data flow mapping (A.data -> B.kwargs) | **Implemented** | `param_bindings` on WorkflowStep, resolved via `workflow_expressions.py` |
+| Conditional skip/branch on step status | **Implemented** | `StepCondition` model with operators (eq, ne, gt, lt, gte, lte, is_true, is_false) |
+| Per-step on-fail handling | **Implemented** | `OnFailAction` enum: abort, continue, skip_next, goto |
+| Loop constructs (count, sweep, until) | **Implemented** | `LoopConfig` model with count, over_values+over_param, until_ref+until_value |
+| GOTO with cycle detection | **Implemented** | Label-based jumps, max 3 visits per step prevents infinite loops |
+
+### Deferred Features (Tier 3+)
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Data flow mapping (A.data["temp"] -> B.kwargs["threshold"]) | Deferred | `depends_on` field on RecipeParameter exists but unused |
-| Conditional skip/branch on step status | Deferred | Would need on_fail/on_warn fields on WorkflowStep |
 | Parallel recipe execution (A and B concurrently, then C) | Deferred | Would need DAG model, not sequential list |
-| Loops/retry with backoff | Deferred | |
-| Drag-and-drop canvas UI | Deferred | Current UI uses list-based step editor |
+| Retry with exponential backoff | Deferred | Current loops have fixed iteration; backoff would need delay config |
+| Drag-and-drop canvas UI | Deferred | Current UI uses list-based step editor with Advanced panel |
 | REST API CRUD endpoints for workflows | Deferred | CLI and UI only for now |
 
 ---

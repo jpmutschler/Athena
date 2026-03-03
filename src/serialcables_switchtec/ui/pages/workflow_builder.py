@@ -16,7 +16,6 @@ from serialcables_switchtec.core.workflows.models import (
 from serialcables_switchtec.core.workflows.workflow_executor import WorkflowExecutor
 from serialcables_switchtec.core.workflows.workflow_models import (
     WorkflowDefinition,
-    WorkflowStep,
     WorkflowSummary,
 )
 from serialcables_switchtec.core.workflows.workflow_storage import WorkflowStorage
@@ -24,6 +23,11 @@ from serialcables_switchtec.ui.components.param_inputs import extract_value
 from serialcables_switchtec.ui.components.recipe_stepper import RecipeStepper
 from serialcables_switchtec.ui.components.workflow_step_editor import workflow_step_editor
 from serialcables_switchtec.ui.layout import page_layout
+from serialcables_switchtec.ui.pages.workflow_builder_helpers import (
+    collect_advanced_data,
+    model_to_step_data,
+    step_data_to_model,
+)
 from serialcables_switchtec.ui.theme import COLORS
 
 # Category labels for grouping recipes in the "Add Step" dropdown
@@ -82,7 +86,7 @@ def workflow_builder_page() -> None:
 
         # --- Mutable builder state ---
         builder_state: dict = {
-            "steps": [],        # list of {recipe_key, label, params}
+            "steps": [],        # list of {recipe_key, label, params, advanced}
             "widgets": [],      # list of widget dicts from step_editor
             "running": False,
             "cancel_event": None,
@@ -229,11 +233,15 @@ def workflow_builder_page() -> None:
 
 
 def _collect_step_data(builder_state: dict) -> list[dict]:
-    """Read current values from step editor widgets into step dicts."""
+    """Read current values from step editor widgets into step dicts.
+
+    Mutates step dicts in place — this is intentional for UI state
+    synchronization before save/run/re-render operations.
+    """
     steps = builder_state["steps"]
     widgets_list = builder_state["widgets"]
 
-    for i, (step, widgets) in enumerate(zip(steps, widgets_list)):
+    for step, widgets in zip(steps, widgets_list):
         label_widget = widgets.get("__label__")
         if label_widget is not None:
             step["label"] = getattr(label_widget, "value", "") or ""
@@ -244,6 +252,10 @@ def _collect_step_data(builder_state: dict) -> list[dict]:
             w = widgets.get(p.name)
             if w is not None:
                 step["params"][p.name] = extract_value(p, w)
+
+        adv_widgets = widgets.get("__advanced__", {})
+        if adv_widgets:
+            step["advanced"] = collect_advanced_data(adv_widgets, recipe)
 
     return steps
 
@@ -265,14 +277,7 @@ def _build_definition(
         ui.notify("Add at least one step", type="warning", position="top")
         return None
 
-    workflow_steps = [
-        WorkflowStep(
-            recipe_key=s["recipe_key"],
-            label=s.get("label", ""),
-            params=dict(s.get("params", {})),
-        )
-        for s in steps_data
-    ]
+    workflow_steps = [step_data_to_model(s) for s in steps_data]
 
     return WorkflowDefinition(
         name=name,
@@ -332,6 +337,7 @@ def _render_steps(
                 on_move_up=make_move_up(idx),
                 on_move_down=make_move_down(idx),
                 on_remove=make_remove(idx),
+                current_advanced=step_data.get("advanced"),
             )
             builder_state["widgets"].append(widgets)
 
@@ -353,13 +359,13 @@ def _add_step(
         ui.notify("Select a recipe first", type="warning", position="top")
         return
 
-    # Collect current widget values before re-render
     _collect_step_data(builder_state)
 
     builder_state["steps"].append({
         "recipe_key": recipe_key,
         "label": "",
         "params": {},
+        "advanced": {},
     })
     _render_steps(builder_state, steps_container, recipe_options)
 
@@ -380,7 +386,6 @@ def _on_save(
     try:
         path = storage.save(definition)
         ui.notify(f"Saved: {path.name}", type="positive", position="top")
-        # Refresh the load dropdown
         load_select.options = storage.list_workflows()
         load_select.update()
     except Exception as exc:
@@ -415,12 +420,7 @@ def _on_load(
     abort_switch.value = definition.abort_on_critical_fail
 
     builder_state["steps"] = [
-        {
-            "recipe_key": step.recipe_key,
-            "label": step.label,
-            "params": dict(step.params),
-        }
-        for step in definition.steps
+        model_to_step_data(step) for step in definition.steps
     ]
     _render_steps(builder_state, steps_container, recipe_options)
     ui.notify(f"Loaded: {definition.name}", type="info", position="top")
@@ -471,7 +471,6 @@ def _on_run(
     if definition is None:
         return
 
-    # Setup
     cancel_event = threading.Event()
     result_queue: queue.Queue[RecipeResult | WorkflowSummary | None] = queue.Queue()
     builder_state["cancel_event"] = cancel_event
@@ -537,7 +536,6 @@ def _on_run(
                 runner_status.set_text(f"Completed: {item.workflow_name}")
                 drained = True
                 break
-            # RecipeResult
             if item.status != StepStatus.RUNNING:
                 results_list.append(item)
             stepper_ref.render_results(
@@ -603,13 +601,12 @@ def _render_workflow_summary(container: ui.column, summary: WorkflowSummary) -> 
                             f"color: {COLORS.text_secondary};"
                         )
 
-            # Per-recipe breakdown
             ui.separator().classes("q-my-sm")
             for step_sum in summary.step_summaries:
                 if step_sum.skipped:
                     icon_name = "skip_next"
                     color = COLORS.text_muted
-                    detail = "Skipped"
+                    detail = step_sum.skip_reason or "Skipped"
                 elif step_sum.recipe_summary is None:
                     icon_name = "help"
                     color = COLORS.text_muted
@@ -629,6 +626,9 @@ def _render_workflow_summary(container: ui.column, summary: WorkflowSummary) -> 
                     color = COLORS.success
                     rs = step_sum.recipe_summary
                     detail = f"{rs.passed}P"
+
+                if step_sum.loop_total is not None and step_sum.loop_total > 1:
+                    detail += f" (x{step_sum.loop_total} iterations)"
 
                 with ui.row().classes("items-center q-gutter-sm q-mb-xs"):
                     ui.icon(icon_name).style(

@@ -317,13 +317,19 @@ def run_workflow(workflow_name: str, device: str | None) -> None:
                 f"({wf_summary.elapsed_s:.1f}s)"
             )
             for step_sum in wf_summary.step_summaries:
+                prefix = f"  [{step_sum.step_index + 1}] {step_sum.recipe_name}"
                 if step_sum.skipped:
-                    click.echo(f"  [{step_sum.step_index + 1}] {step_sum.recipe_name}: SKIPPED")
+                    reason = f" ({step_sum.skip_reason})" if step_sum.skip_reason else ""
+                    click.echo(f"{prefix}: SKIPPED{reason}")
                 elif step_sum.recipe_summary:
                     rs = step_sum.recipe_summary
+                    loop_info = ""
+                    if step_sum.loop_total is not None and step_sum.loop_total > 1:
+                        loop_info = f" x{step_sum.loop_total} iters"
                     click.echo(
-                        f"  [{step_sum.step_index + 1}] {step_sum.recipe_name}: "
-                        f"{rs.passed}P {rs.failed}F {rs.warnings}W ({rs.elapsed_s:.1f}s)"
+                        f"{prefix}: "
+                        f"{rs.passed}P {rs.failed}F {rs.warnings}W "
+                        f"({rs.elapsed_s:.1f}s){loop_info}"
                     )
     finally:
         dev.close()

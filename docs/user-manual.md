@@ -1011,11 +1011,16 @@ The following table lists all 18 implemented recipes with their category, name, 
 
 The Workflow Builder page lets you compose multiple recipes into a single multi-step workflow, save it as a reusable JSON file, and run it with one click. Workflows are saved to `~/.switchtec/workflows/` and can be shared between team members or version-controlled.
 
+Workflows support advanced control flow: per-step failure handling, inter-step data passing, loop constructs, and conditional branching -- all configurable through a collapsible "Advanced" panel on each step.
+
 ### Use Cases
 
 - **"Morning checkout"** workflow: Link Health Check -> Thermal Profile -> BER Soak
 - **"New card qualification"**: All-Port Sweep -> EQ Report -> Eye Scan -> Firmware Validation
 - **"Debug sequence"**: Link Training Debug -> LTSSM Monitor -> Error Injection Recovery
+- **"Port sweep"**: Link Health Check looping over ports 0-7 with `over_values` loop
+- **"Conditional BER"**: Link Health Check -> BER Soak (only if link_up is true)
+- **"Retry until stable"**: Link Health Check looping until `link_up == true`, max 5 iterations
 
 ### Workflow Metadata Section
 
@@ -1023,7 +1028,7 @@ The Workflow Builder page lets you compose multiple recipes into a single multi-
 |---|---|---|---|
 | **Workflow Name** | Text input | Yes | Name for the workflow (used as the filename when saved) |
 | **Description** | Text area | No | Optional description of what the workflow does |
-| **Abort on Critical Failure** | Switch | No (default: on) | When enabled, the workflow stops after a recipe step fails with CRITICAL criticality. Non-critical failures always continue. |
+| **Abort on Critical Failure** | Switch | No (default: on) | When enabled, the workflow stops after a recipe step fails with CRITICAL criticality (unless the step's per-step On Fail overrides this). Non-critical failures always continue. |
 
 ### Step List
 
@@ -1033,10 +1038,71 @@ The step list shows each recipe in the workflow sequence:
 2. **Add Step** button: Appends the selected recipe to the step list.
 3. Each step card shows:
    - Step number and recipe name
-   - Optional label override
+   - Optional **step label** (used for referencing this step in data bindings, conditions, and GOTO targets)
    - Parameter inputs auto-generated from the recipe's parameter definitions
+   - Collapsible **Advanced** panel (see below)
    - Move Up / Move Down buttons to reorder
    - Remove button to delete the step
+
+### Advanced Step Settings
+
+Each step has a collapsible **Advanced** expansion panel with four sections. All settings are optional and default to simple sequential execution (backward-compatible with existing workflows).
+
+#### On Failure
+
+Controls what happens when the step encounters a critical failure:
+
+| Setting | Description |
+|---|---|
+| **Abort** (default) | Stop the workflow and skip all remaining steps |
+| **Continue** | Log the failure and proceed to the next step |
+| **Skip Next** | Skip the next step in the sequence, then continue |
+| **Goto** | Jump to a labeled step (enter the target label in the Goto field) |
+
+Labels must be unique across all steps. GOTO targets are validated up front -- referencing a non-existent label raises an error before execution begins.
+
+#### Parameter Bindings
+
+Bind a step's input parameters to data produced by a previous step. This enables inter-step data passing without writing code.
+
+Each recipe parameter has an optional **Bind** text input. Enter a reference expression to pull the value from a previous step's output:
+
+| Expression | Description |
+|---|---|
+| `steps[0].data.temperature` | Temperature from step 0's output |
+| `steps[-1].data.total_errors` | Total errors from the previous step |
+| `steps[link_check].data.link_up` | Link status from the step labeled "link_check" |
+| `steps[0].data.ports.0.link_up` | Nested key path through dicts and lists |
+| `steps[0].failed` | Boolean: did step 0 have a critical failure? |
+| `steps[0].passed` | Boolean: did step 0 pass? |
+
+When a binding resolves successfully, the bound value overrides the static parameter. If resolution fails (missing step, missing key), the static parameter value is used as a fallback.
+
+#### Loop Configuration
+
+Repeat a step multiple times with different configurations:
+
+| Mode | Fields | Description |
+|---|---|---|
+| **Run Once** (default) | -- | No looping; step runs a single time |
+| **Count** | Count | Repeat the step N times |
+| **Over Values** | Values, Param | Iterate over a comma-separated list of values (e.g., `0,1,2,3`), injecting each value into the specified parameter |
+| **Until** | Reference, Value, Max Iterations | Repeat until a reference expression equals the target value. Safety cap (default 100) prevents infinite loops |
+
+Loop iterations check for cancellation between each run. If a critical failure occurs during a loop and On Fail is set to Abort, the loop stops and remaining workflow steps are skipped.
+
+#### Condition
+
+Optionally skip a step based on data from a previous step:
+
+| Field | Description |
+|---|---|
+| **Enable** | Toggle to activate the condition |
+| **Reference** | Expression pointing to a previous step's data (same syntax as parameter bindings) |
+| **Operator** | Comparison: `eq`, `ne`, `gt`, `lt`, `gte`, `lte`, `is_true`, `is_false` |
+| **Value** | The value to compare against (not used for `is_true` / `is_false`) |
+
+If the condition is **not met**, the step is skipped with a "Condition not met" reason shown in the workflow summary. If the reference cannot be resolved (e.g., the referenced step hasn't run yet), the condition **fails open** and the step runs.
 
 ### Actions
 
@@ -1051,12 +1117,16 @@ The step list shows each recipe in the workflow sequence:
 
 When you click **Run Workflow**:
 
-1. The executor validates all recipe keys and parameters up front.
+1. The executor validates all recipe keys, parameters, labels (no duplicates), and GOTO targets up front.
 2. Each recipe runs sequentially, yielding step-by-step results.
 3. The RecipeStepper displays results prefixed with the workflow context: `"[1/3] Link Health Check > Read port status"`.
 4. Between recipes, the executor checks for cancellation.
-5. If **Abort on Critical Failure** is enabled and a step fails with CRITICAL criticality, remaining recipes are skipped.
-6. On completion, a workflow summary banner shows total/completed/skipped recipe counts.
+5. Conditions are evaluated before each step; steps that don't meet their condition are skipped.
+6. Parameter bindings are resolved from the execution context before each step runs.
+7. Loop steps repeat according to their loop configuration, with iteration data stored for subsequent steps.
+8. On critical failure, the step's **On Fail** action determines whether to abort, continue, skip the next step, or jump to a labeled step.
+9. GOTO cycles are detected (max 3 visits to the same step) and abort the workflow to prevent infinite loops.
+10. On completion, a workflow summary banner shows total/completed/skipped recipe counts, skip reasons, and loop iteration counts.
 
 ### CLI Access
 
@@ -1070,22 +1140,72 @@ athena recipe list-workflows
 athena recipe run-workflow morning_checkout -d /dev/switchtec0
 ```
 
+The CLI output includes skip reasons and loop iteration counts:
+
+```
+[1] Link Health Check: 2P 0F 0W (1.2s)
+[2] BER Soak: SKIPPED (Condition not met)
+[3] Counting Recipe: 1P 0F 0W (0.5s) x4 iters
+```
+
 ### Workflow JSON Format
 
-Saved workflows use this structure:
+Saved workflows use this structure. All advanced fields are optional and default to simple sequential behavior, so existing workflow JSON files continue to work unchanged.
 
 ```json
 {
   "name": "Morning Checkout",
   "description": "Daily port validation sequence",
   "steps": [
-    {"recipe_key": "link_health_check", "label": "", "params": {"port_id": 0}},
-    {"recipe_key": "thermal_profile", "label": "", "params": {"duration_s": 10}}
+    {
+      "recipe_key": "link_health_check",
+      "label": "health",
+      "params": {"port_id": 0}
+    },
+    {
+      "recipe_key": "ber_soak_test",
+      "label": "",
+      "params": {"port_id": 0, "duration_s": 30},
+      "on_fail": "continue",
+      "param_bindings": {},
+      "condition": {
+        "ref": "steps[health].data.link_up",
+        "operator": "eq",
+        "value": true
+      }
+    },
+    {
+      "recipe_key": "link_health_check",
+      "label": "",
+      "params": {},
+      "loop": {
+        "over_values": [0, 1, 2, 3],
+        "over_param": "port_id"
+      }
+    }
   ],
   "abort_on_critical_fail": true,
   "created_at": "2026-03-01T12:00:00+00:00",
-  "updated_at": "2026-03-01T12:00:00+00:00"
+  "updated_at": "2026-03-03T12:00:00+00:00"
 }
+```
+
+### Expression Reference
+
+The expression system uses a safe regex parser (no `eval()`). Reference syntax:
+
+| Pattern | Resolves To |
+|---|---|
+| `steps[N].data.key` | Data key from step N (0-indexed) |
+| `steps[-N].data.key` | Data key from the Nth-previous step |
+| `steps[label].data.key` | Data key from the step with the given label |
+| `steps[N].data.key1.key2` | Nested key path through dicts |
+| `steps[N].data.key.0` | Index into a list in the data |
+| `steps[N].failed` | Boolean: did step N have a critical failure? |
+| `steps[N].passed` | Boolean: did step N pass without critical failure? |
+| `steps[N].status` | String: "failed" or "passed" |
+
+Dunder attribute paths (e.g., `__class__`) are rejected for safety.
 ```
 
 ---
