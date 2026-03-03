@@ -8,6 +8,7 @@ import threading
 from nicegui import ui
 
 from serialcables_switchtec.core.workflows import RECIPE_REGISTRY
+from serialcables_switchtec.core.workflows.export import DeviceContext
 from serialcables_switchtec.core.workflows.models import (
     RecipeCategory,
     RecipeResult,
@@ -20,7 +21,7 @@ from serialcables_switchtec.core.workflows.workflow_models import (
 )
 from serialcables_switchtec.core.workflows.workflow_storage import WorkflowStorage
 from serialcables_switchtec.ui.components.param_inputs import extract_value
-from serialcables_switchtec.ui.components.recipe_stepper import RecipeStepper
+from serialcables_switchtec.ui.components.workflow_monitor import WorkflowMonitor
 from serialcables_switchtec.ui.components.workflow_step_editor import workflow_step_editor
 from serialcables_switchtec.ui.layout import page_layout
 from serialcables_switchtec.ui.pages.workflow_builder_helpers import (
@@ -93,7 +94,10 @@ def workflow_builder_page() -> None:
             "timer": None,
             "queue": None,
             "results": [],
-            "stepper": None,
+            "monitor": None,
+            "definition": None,
+            "device_context": None,
+            "wf_summary": None,
         }
 
         # =================================================================
@@ -446,6 +450,24 @@ def _on_delete(
         ui.notify(f"Delete failed: {exc}", type="negative", position="top")
 
 
+def _capture_device_context(dev: object) -> DeviceContext:
+    """Capture device metadata before workflow execution."""
+    from serialcables_switchtec.core.workflows.export import make_device_context
+
+    try:
+        return make_device_context(
+            device_path=getattr(dev, "path", ""),
+            name=getattr(dev, "name", ""),
+            device_id=getattr(dev, "device_id", 0),
+            generation=getattr(dev, "generation_str", ""),
+            fw_version=dev.get_fw_version() if hasattr(dev, "get_fw_version") else "",
+        )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Device context capture failed: %s", exc)
+        return make_device_context()
+
+
 def _on_run(
     name_input: object,
     desc_input: object,
@@ -471,6 +493,11 @@ def _on_run(
     if definition is None:
         return
 
+    # Capture device context before execution (device may disconnect later)
+    builder_state["device_context"] = _capture_device_context(dev)
+    builder_state["definition"] = definition
+    builder_state["wf_summary"] = None
+
     cancel_event = threading.Event()
     result_queue: queue.Queue[RecipeResult | WorkflowSummary | None] = queue.Queue()
     builder_state["cancel_event"] = cancel_event
@@ -479,8 +506,14 @@ def _on_run(
     builder_state["running"] = True
 
     runner_container.clear()
-    stepper = RecipeStepper(runner_container)
-    builder_state["stepper"] = stepper
+
+    # Build step keys for the monitor
+    step_keys = [
+        (idx, step.recipe_key) for idx, step in enumerate(definition.steps)
+    ]
+    monitor = WorkflowMonitor(runner_container)
+    monitor.start(definition.name, len(definition.steps), step_keys)
+    builder_state["monitor"] = monitor
 
     runner_status.set_text(f"Running: {definition.name}...")
     cancel_btn.set_visibility(True)
@@ -516,8 +549,7 @@ def _on_run(
     threading.Thread(target=_run_in_thread, daemon=True).start()
 
     def _drain_queue() -> None:
-        stepper_ref = builder_state["stepper"]
-        results_list = builder_state["results"]
+        monitor_ref = builder_state["monitor"]
         q = builder_state["queue"]
         if q is None:
             return
@@ -532,16 +564,13 @@ def _on_run(
                 drained = True
                 break
             if isinstance(item, WorkflowSummary):
-                _render_workflow_summary(runner_container, item)
+                builder_state["wf_summary"] = item
+                monitor_ref.finish(item)
                 runner_status.set_text(f"Completed: {item.workflow_name}")
+                _add_download_report_button(runner_container, builder_state)
                 drained = True
                 break
-            if item.status != StepStatus.RUNNING:
-                results_list.append(item)
-            stepper_ref.render_results(
-                [*results_list] if item.status != StepStatus.RUNNING
-                else [*results_list, item]
-            )
+            monitor_ref.update(item)
 
         if drained:
             timer = builder_state.get("timer")
@@ -554,91 +583,40 @@ def _on_run(
     builder_state["timer"] = ui.timer(0.2, _drain_queue)
 
 
-def _render_workflow_summary(container: ui.column, summary: WorkflowSummary) -> None:
-    """Render the workflow summary banner with per-recipe breakdown."""
+def _add_download_report_button(container: ui.column, builder_state: dict) -> None:
+    """Add a Download Report button after workflow completion."""
+    from datetime import datetime, timezone
+
+    from serialcables_switchtec.core.workflows.workflow_report import (
+        WorkflowReportGenerator,
+        WorkflowReportInput,
+    )
+
+    wf_summary = builder_state.get("wf_summary")
+    definition = builder_state.get("definition")
+    device_ctx = builder_state.get("device_context")
+
+    if wf_summary is None or definition is None or device_ctx is None:
+        return
+
+    def _download_report() -> None:
+        import re
+
+        report_input = WorkflowReportInput(
+            workflow_summary=wf_summary,
+            workflow_definition=definition,
+            device_context=device_ctx,
+            generated_at=datetime.now(tz=timezone.utc).isoformat(),
+        )
+        generator = WorkflowReportGenerator()
+        html_content = generator.generate(report_input)
+        slug = re.sub(r"[^a-z0-9]+", "_", wf_summary.workflow_name[:200].lower()).strip("_") or "report"
+        filename = f"workflow_report_{slug}.html"
+        ui.download(html_content.encode("utf-8"), filename)
+
     with container:
-        ui.separator().classes("q-my-sm")
-
-        if summary.aborted:
-            banner_color = COLORS.warning
-            banner_icon = "cancel"
-            banner_text = "Aborted"
-        elif any(
-            s.recipe_summary and s.recipe_summary.failed > 0
-            for s in summary.step_summaries
-        ):
-            banner_color = COLORS.error
-            banner_icon = "error"
-            banner_text = "Failed"
-        else:
-            banner_color = COLORS.success
-            banner_icon = "check_circle"
-            banner_text = "Passed"
-
-        with ui.card().classes("w-full q-pa-md").style(
-            f"border: 2px solid {banner_color}; background: {banner_color}15;"
-        ):
-            with ui.row().classes("items-center q-gutter-md"):
-                ui.icon(banner_icon).classes("text-h4").style(
-                    f"color: {banner_color};"
-                )
-                with ui.column():
-                    ui.label(
-                        f"{summary.workflow_name}: {banner_text}"
-                    ).classes("text-h6 text-bold").style(
-                        f"color: {banner_color};"
-                    )
-                    with ui.row().classes("q-gutter-md"):
-                        ui.label(
-                            f"Recipes: {summary.completed_recipes}/{summary.total_recipes}"
-                        ).style(f"color: {COLORS.text_primary};")
-                        skipped = sum(1 for s in summary.step_summaries if s.skipped)
-                        if skipped:
-                            ui.label(f"Skipped: {skipped}").style(
-                                f"color: {COLORS.text_muted};"
-                            )
-                        ui.label(f"Time: {summary.elapsed_s:.1f}s").style(
-                            f"color: {COLORS.text_secondary};"
-                        )
-
-            ui.separator().classes("q-my-sm")
-            for step_sum in summary.step_summaries:
-                if step_sum.skipped:
-                    icon_name = "skip_next"
-                    color = COLORS.text_muted
-                    detail = step_sum.skip_reason or "Skipped"
-                elif step_sum.recipe_summary is None:
-                    icon_name = "help"
-                    color = COLORS.text_muted
-                    detail = "No result"
-                elif step_sum.recipe_summary.failed > 0:
-                    icon_name = "cancel"
-                    color = COLORS.error
-                    rs = step_sum.recipe_summary
-                    detail = f"{rs.passed}P / {rs.failed}F / {rs.warnings}W"
-                elif step_sum.recipe_summary.warnings > 0:
-                    icon_name = "warning"
-                    color = COLORS.warning
-                    rs = step_sum.recipe_summary
-                    detail = f"{rs.passed}P / {rs.warnings}W"
-                else:
-                    icon_name = "check_circle"
-                    color = COLORS.success
-                    rs = step_sum.recipe_summary
-                    detail = f"{rs.passed}P"
-
-                if step_sum.loop_total is not None and step_sum.loop_total > 1:
-                    detail += f" (x{step_sum.loop_total} iterations)"
-
-                with ui.row().classes("items-center q-gutter-sm q-mb-xs"):
-                    ui.icon(icon_name).style(
-                        f"color: {color}; font-size: 1.2em;"
-                    )
-                    ui.label(
-                        f"[{step_sum.step_index + 1}] {step_sum.recipe_name}"
-                    ).classes("text-subtitle2").style(
-                        f"color: {COLORS.text_primary};"
-                    )
-                    ui.label(detail).classes("text-caption").style(
-                        f"color: {color};"
-                    )
+        ui.button(
+            "Download Report",
+            icon="download",
+            on_click=_download_report,
+        ).props("unelevated dense color=primary").classes("q-mt-sm")

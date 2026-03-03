@@ -192,11 +192,11 @@ def recipe_run(
 
             from serialcables_switchtec.core.workflows.export import (
                 RecipeRunExporter,
-                _make_device_context,
+                make_device_context,
             )
 
             try:
-                context = _make_device_context(
+                context = make_device_context(
                     device_path=device,
                     name=dev.name,
                     device_id=dev.device_id,
@@ -204,7 +204,7 @@ def recipe_run(
                     fw_version=dev.get_fw_version(),
                 )
             except Exception:
-                context = _make_device_context(device_path=device)
+                context = make_device_context(device_path=device)
 
             exporter = RecipeRunExporter(Path(output_dir))
             if export == "json":
@@ -250,8 +250,30 @@ def list_workflows() -> None:
     default=None,
     help="Device path (e.g., /dev/switchtec0).",
 )
-def run_workflow(workflow_name: str, device: str | None) -> None:
+@click.option(
+    "--report/--no-report",
+    default=False,
+    help="Generate an HTML report after completion.",
+)
+@click.option(
+    "--output-dir", "-o",
+    type=click.Path(file_okay=False, dir_okay=True),
+    default=".",
+    help="Output directory for the report.",
+)
+def run_workflow(
+    workflow_name: str,
+    device: str | None,
+    report: bool,
+    output_dir: str,
+) -> None:
     """Run a saved workflow by name."""
+    from serialcables_switchtec.cli.monitor_format import (
+        format_result_line,
+        format_step_header,
+        format_summary_table,
+    )
+    from serialcables_switchtec.core.workflows.monitor_state import parse_prefix
     from serialcables_switchtec.core.workflows.workflow_executor import WorkflowExecutor
     from serialcables_switchtec.core.workflows.workflow_storage import WorkflowStorage
 
@@ -281,6 +303,7 @@ def run_workflow(workflow_name: str, device: str | None) -> None:
     cancel = threading.Event()
     wf_summary = None
     executor = WorkflowExecutor()
+    last_step_index = -1
 
     try:
         try:
@@ -288,18 +311,15 @@ def run_workflow(workflow_name: str, device: str | None) -> None:
             try:
                 while True:
                     result = next(gen)
-                    status_char = {
-                        StepStatus.RUNNING: "...",
-                        StepStatus.PASS: "PASS",
-                        StepStatus.FAIL: "FAIL",
-                        StepStatus.WARN: "WARN",
-                        StepStatus.INFO: "INFO",
-                        StepStatus.SKIP: "SKIP",
-                    }.get(result.status, "???")
-                    click.echo(
-                        f"  [{status_char}] {result.step}: {result.detail}",
-                        err=True,
-                    )
+                    # Print step header on step transitions
+                    step_idx, clean_name = parse_prefix(result.recipe_name)
+                    if step_idx != last_step_index:
+                        click.echo(
+                            f"\n{format_step_header(step_idx, len(definition.steps), clean_name)}",
+                            err=True,
+                        )
+                        last_step_index = step_idx
+                    click.echo(format_result_line(result), err=True)
             except StopIteration as stop:
                 wf_summary = stop.value
         except ValueError as exc:
@@ -310,27 +330,38 @@ def run_workflow(workflow_name: str, device: str | None) -> None:
             raise SystemExit(1) from exc
 
         if wf_summary is not None:
-            click.echo(
-                f"\n{wf_summary.workflow_name}: "
-                f"{wf_summary.completed_recipes}/{wf_summary.total_recipes} recipes completed "
-                f"({'aborted' if wf_summary.aborted else 'finished'}) "
-                f"({wf_summary.elapsed_s:.1f}s)"
+            click.echo(f"\n{format_summary_table(wf_summary)}")
+
+        # Generate HTML report if requested
+        if report and wf_summary is not None:
+            from pathlib import Path
+
+            from serialcables_switchtec.core.workflows.export import make_device_context
+            from serialcables_switchtec.core.workflows.workflow_report import (
+                WorkflowReportGenerator,
+                WorkflowReportInput,
             )
-            for step_sum in wf_summary.step_summaries:
-                prefix = f"  [{step_sum.step_index + 1}] {step_sum.recipe_name}"
-                if step_sum.skipped:
-                    reason = f" ({step_sum.skip_reason})" if step_sum.skip_reason else ""
-                    click.echo(f"{prefix}: SKIPPED{reason}")
-                elif step_sum.recipe_summary:
-                    rs = step_sum.recipe_summary
-                    loop_info = ""
-                    if step_sum.loop_total is not None and step_sum.loop_total > 1:
-                        loop_info = f" x{step_sum.loop_total} iters"
-                    click.echo(
-                        f"{prefix}: "
-                        f"{rs.passed}P {rs.failed}F {rs.warnings}W "
-                        f"({rs.elapsed_s:.1f}s){loop_info}"
-                    )
+
+            try:
+                context = make_device_context(
+                    device_path=device,
+                    name=dev.name,
+                    device_id=dev.device_id,
+                    generation=dev.generation_str,
+                    fw_version=dev.get_fw_version(),
+                )
+            except Exception as exc:
+                click.echo(f"Warning: device context capture failed: {exc}", err=True)
+                context = make_device_context(device_path=device or "")
+
+            report_input = WorkflowReportInput(
+                workflow_summary=wf_summary,
+                workflow_definition=definition,
+                device_context=context,
+            )
+            generator = WorkflowReportGenerator()
+            report_path = generator.generate_to_file(report_input, Path(output_dir))
+            click.echo(f"Report: {report_path}")
     finally:
         dev.close()
 

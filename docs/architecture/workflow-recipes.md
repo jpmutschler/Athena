@@ -1,8 +1,8 @@
 # Workflow Recipes -- Architecture Design
 
-**Status:** Implemented (18 recipes + Workflow Builder + Control Flow)
+**Status:** Implemented (18 recipes + Workflow Builder + Control Flow + Live Monitor + Run Report)
 **Date:** 2026-03-01
-**Last updated:** 2026-03-03 (Workflow control flow: on-fail handling, data passing, loops, conditions)
+**Last updated:** 2026-03-03 (Live workflow monitor, self-contained HTML run reports)
 **Context:** PCIe validation engineer review identified that UI users need one-click access to common validation workflows, not raw CLI-level control. This is especially important for demos and monitoring-focused users.
 
 ---
@@ -512,7 +512,16 @@ src/serialcables_switchtec/core/workflows/
 |
 |-- # Debug
 |-- osa_capture.py           # OsaLinkTrainingCaptureRecipe
-+-- thermal_profile.py       # SwitchThermalProfileRecipe
+|-- thermal_profile.py       # SwitchThermalProfileRecipe
+|
+|-- # Live Monitor State
+|-- monitor_state.py         # MonitorState, MonitorStepState, parse_prefix()
+|
+|-- # Run Report Generation
+|-- workflow_report.py       # WorkflowReportInput, WorkflowReportGenerator, _REPORT_CSS
+|-- report_sections.py       # Recipe-specific HTML section renderers (registry + 6 priority + generic)
+|-- report_charts.py         # CSS-based chart primitives (bar chart, metric card, status badge, results table)
++-- export.py                # DeviceContext, make_device_context(), RecipeRunExporter
 ```
 
 ### Registry Pattern
@@ -572,34 +581,56 @@ def get_recipes_by_category(category: RecipeCategory) -> dict[str, type[Recipe]]
 ### UI (NiceGUI Dashboard)
 
 ```
-ui/pages/workflows.py     # Workflow launcher page
+ui/pages/workflows.py     # Workflow launcher page (single-recipe)
+ui/pages/workflow_builder.py # Multi-recipe workflow composer + runner
 ui/components/
 |-- recipe_card.py         # Card with name, description, parameter inputs, Run button
-|-- recipe_stepper.py      # Live progress stepper rendering RecipeResult stream
-+-- recipe_summary.py      # Pass/fail summary badge
+|-- recipe_stepper.py      # Live progress stepper rendering RecipeResult stream (single-recipe pages)
+|-- recipe_summary.py      # Pass/fail summary badge
+|-- workflow_monitor.py    # Live workflow monitor with progress bar, counters, metric cards
++-- monitor_metrics.py     # Recipe-specific NiceGUI metric card renderers (6 priority + generic)
 ```
 
-**Flow:**
+**Single-Recipe Flow (workflows.py):**
 1. Workflows page groups recipes by `RecipeCategory` with tab or sidebar navigation
 2. User selects a recipe card → parameter inputs appear (auto-generated from `recipe.parameters()`, respecting `depends_on`)
 3. User clicks Run → UI creates a `threading.Event` cancel token and calls `recipe.run(dev, cancel, **params)` in a background thread
 4. Each yielded `RecipeResult` is pushed to the UI via NiceGUI's `ui.timer` or async update
-5. Stepper shows: step name, status badge (green/red/yellow), detail text, criticality indicator
+5. `RecipeStepper` shows: step name, status badge (green/red/yellow), detail text, criticality indicator
 6. Cancel button sets the cancel event → recipe yields SKIP for remaining steps and cleans up
 7. On completion, `RecipeSummary` is rendered as a header badge (e.g., "5/5 PASSED") and persisted to history
+
+**Multi-Recipe Workflow Flow (workflow_builder.py):**
+1. User composes a workflow in the builder, clicks Run Workflow
+2. `WorkflowMonitor.start()` builds the skeleton UI: progress bar, elapsed time, counters, metric container
+3. Background thread runs `WorkflowExecutor.run()`, pushing `RecipeResult` objects to a queue
+4. `ui.timer(0.2)` drains the queue, calling `monitor.update(result)` for each item:
+   - Progress bar and counters update in-place (no DOM rebuild)
+   - On step transition, the completed step renders as a collapsible `ui.expansion` panel with detail lines and metric cards
+   - Live metric cards for the current step update via `render_metrics()` (dispatched by recipe key)
+5. On `WorkflowSummary`: `monitor.finish()` renders the last step, shows the summary banner, and adds a **Download Report** button
+6. Download Report constructs `WorkflowReportInput`, generates self-contained HTML via `WorkflowReportGenerator.generate()`, and serves it via `ui.download()`
 
 ### CLI
 
 ```bash
 # List available recipes
-athena workflow list
+athena recipe list
 
 # Run a recipe
-athena workflow run link_health_check /dev/switchtec0 --port 0
+athena recipe run link_health_check -d /dev/switchtec0 -p port_id=0
 
-# JSON output for scripting
-athena --json-output workflow run ber_soak_test /dev/switchtec0 --port 0 --duration 60
+# List saved workflows
+athena recipe list-workflows
+
+# Run a saved workflow with formatted step headers and summary table
+athena recipe run-workflow morning_checkout -d /dev/switchtec0
+
+# Run a workflow and generate an HTML report
+athena recipe run-workflow morning_checkout -d /dev/switchtec0 --report -o ./reports
 ```
+
+CLI workflow output uses formatted step headers (`=== [1/3] Recipe Name ===`), per-step result lines with inline metrics from `data` dicts, and a bordered summary table. Formatting helpers are in `cli/monitor_format.py`.
 
 ### REST API
 
@@ -733,13 +764,16 @@ core/workflows/
 ui/components/
   param_inputs.py            # Extracted shared param_input() + extract_value() + binding_input()
   workflow_step_editor.py    # Single step row editor with collapsible Advanced panel
+  workflow_monitor.py        # Live workflow monitor (replaces RecipeStepper for workflow context)
+  monitor_metrics.py         # Recipe-specific NiceGUI metric card renderers
 
 ui/pages/
-  workflow_builder.py          # Full builder page: metadata, step list, save/load/delete/run
+  workflow_builder.py          # Full builder page: metadata, step list, save/load/delete/run + Download Report
   workflow_builder_helpers.py  # Pure conversion helpers (step_data <-> model, advanced widget collection)
 
 cli/
-  recipe.py              # list-workflows and run-workflow subcommands (shows skip reasons + loop info)
+  recipe.py              # list-workflows and run-workflow --report subcommands
+  monitor_format.py      # CLI step header, result line, and summary table formatters
 ```
 
 ### Key Design Decisions
@@ -846,8 +880,131 @@ Safe regex-based parser supporting: `steps[N].data.key`, `steps[-N].data.key`, `
 
 ---
 
+## Live Workflow Monitor -- Implemented
+
+Replaces the flat `RecipeStepper` when running multi-recipe workflows. Single-recipe pages (workflows.py) continue to use `RecipeStepper`.
+
+### Architecture
+
+```
+core/workflows/
+  monitor_state.py          # MonitorState, MonitorStepState (mutable @dataclass accumulators)
+                            # parse_prefix() — extracts step index from "[1/3] Recipe Name"
+
+ui/components/
+  workflow_monitor.py       # WorkflowMonitor — NiceGUI component with skeleton + live updates
+  monitor_metrics.py        # Recipe-specific metric card renderers (registry dispatch)
+
+cli/
+  monitor_format.py         # format_step_header(), format_result_line(), format_summary_table()
+```
+
+### Monitor State (`monitor_state.py`)
+
+`MonitorState` is a mutable `@dataclass` (intentionally not frozen — it's a runtime accumulator, not a DTO) that tracks:
+
+- Per-step timing, results, and pass/fail counts via `MonitorStepState`
+- Step transitions detected by `ingest(result)`, which parses the `[N/M]` prefix from `RecipeResult.recipe_name`
+- Overall pass/fail/warn/skip totals across all steps
+- Extracted data (merged `data` dicts from each step's results)
+
+### UI Component (`workflow_monitor.py`)
+
+`WorkflowMonitor` builds a skeleton layout once in `start()` and updates it in-place via `set_text()`/`set_value()` (no DOM rebuild per result):
+
+- Progress row: elapsed time label + `ui.linear_progress` bar + `"N/M"` text
+- Current step label (accent-colored, bold)
+- Pass/Fail/Warn counter row
+- Live metrics container (recipe-specific cards for the running step)
+- Completed steps container (collapsible `ui.expansion` panels)
+
+### Metric Card Renderers (`monitor_metrics.py`)
+
+Registry pattern keyed by `recipe_key`. Six priority renderers with specialized cards:
+
+| Recipe Key | Metric Cards |
+|---|---|
+| `cross_hair_margin` | Per-lane H/V margin, colored by threshold |
+| `ber_soak` | Total errors + per-lane error cards |
+| `bandwidth_baseline` | Egress/ingress avg cards |
+| `link_health_check` | Link UP/DOWN, rate, temperature |
+| `all_port_sweep` | Port count summary (total/up/down) |
+| `eye_quick_scan` | Width, height, area cards |
+
+All other recipes use a generic fallback that renders scalar values from the `data` dict.
+
+### CLI Formatting (`monitor_format.py`)
+
+- `format_step_header(step_index, total, recipe_name)` — `=== [1/3] Recipe Name ===`
+- `format_result_line(result)` — `  [PASS] Step name: detail  (key1=val, key2=val)`
+- `format_summary_table(summary)` — bordered summary with per-recipe breakdown
+
+---
+
+## Workflow Run Report -- Implemented
+
+Self-contained HTML report generated after workflow completion. Available from both the browser UI (Download Report button) and the CLI (`--report` flag).
+
+### Architecture
+
+```
+core/workflows/
+  workflow_report.py        # WorkflowReportInput (frozen Pydantic), WorkflowReportGenerator
+  report_sections.py        # Recipe-specific HTML section renderers (registry + generic fallback)
+  report_charts.py          # CSS-based chart primitives (bar charts, metric cards, status badges)
+  export.py                 # DeviceContext, make_device_context()
+```
+
+### Report Input Model
+
+`WorkflowReportInput` is a frozen Pydantic model containing:
+- `workflow_summary: WorkflowSummary` — from `WorkflowExecutor.run()` return value
+- `workflow_definition: WorkflowDefinition` — workflow configuration (steps, on-fail, loops)
+- `device_context: DeviceContext` — device metadata captured before execution
+- `generated_at: str` — ISO-8601 timestamp
+
+### Report HTML Structure
+
+1. **Header** — device name, generation, FW version, timestamp
+2. **Executive summary dashboard** — card grid: Total Recipes, Passed, Failed, Warnings, Skipped, Duration, overall verdict banner
+3. **Workflow configuration** — name, description, step list table (index, recipe, label, on-fail policy)
+4. **Per-recipe sections** — recipe header + verdict badge + duration, step results table (step, status, criticality, detail), recipe-specific data visualization, loop iteration breakdown if applicable
+5. **Footer** — generation timestamp, tool info
+
+### CSS-Based Charts (`report_charts.py`)
+
+No SVG, no JavaScript — styled `<div>` elements only:
+
+- `css_bar_chart()` — horizontal bars using `width: N%`, threshold coloring (green below, yellow/red above)
+- `css_metric_card()` — styled div with large value text and small label
+- `css_status_badge()` — inline span with colored background (pass=green, fail=red, warn=yellow, skip=gray)
+- `css_results_table()` — HTML table with status badges and detail columns
+
+Color parameters are validated via `_safe_color()` regex to prevent CSS injection.
+
+### Recipe Section Renderers (`report_sections.py`)
+
+Registry pattern (same 6 priority recipes as the live monitor):
+- `cross_hair_margin` — CSS bar chart showing H/V margin per lane
+- `ber_soak` — CSS bar chart of per-lane errors + total errors highlight
+- `bandwidth_baseline` — paired CSS bars for egress/ingress min/max/avg
+- `all_port_sweep` — port table with UP/DOWN colored badges
+- `eye_quick_scan` — large metric cards (width, height, area %)
+- `ltssm_monitor` — patterns table + transitions count + verdict badge
+
+All other recipes get a generic results table with status badges automatically.
+
+### Security
+
+- Filename slug sanitized via `_safe_slug()` (`re.sub(r"[^a-z0-9]+", "_", slug)`) matching `WorkflowStorage._slugify`
+- Path confinement: `generate_to_file()` checks `path.is_relative_to(output_dir)` before writing
+- All user-visible strings HTML-escaped via `_esc()` (canonical wrapper in `report_charts.py`)
+- CSS color parameters validated via `_safe_color()` regex (`^#[0-9a-fA-F]{3,8}$`)
+
+---
+
 ## Open Questions (resolve during implementation)
 
 1. **History UI:** How should the dashboard present recipe history? Options: sidebar timeline, dedicated history page, or inline "last run" badge on each recipe card.
 
-2. **Export format:** Should recipe results be exportable beyond JSON? CSV for BER data, PDF for reports? Defer until user feedback.
+2. ~~**Export format:** Should recipe results be exportable beyond JSON? CSV for BER data, PDF for reports?~~ **Resolved:** Self-contained HTML reports are now generated after workflow completion (dark-themed, CSS-only, no external dependencies). Available via UI Download Report button and CLI `--report` flag. JSON and CSV export for individual recipes was already implemented in `export.py`.

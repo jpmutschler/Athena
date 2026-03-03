@@ -27,7 +27,7 @@ class DeviceContext:
     timestamp: str
 
 
-def _make_device_context(
+def make_device_context(
     device_path: str = "",
     name: str = "",
     device_id: int = 0,

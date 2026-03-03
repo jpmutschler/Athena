@@ -43,7 +43,7 @@ Developed by [Serial Cables](https://www.serialcables.com/), a manufacturer of P
 
 **FastAPI REST API** -- HTTP API with auto-generated OpenAPI documentation, API key authentication, input validation via Pydantic, rate limiting on destructive endpoints, WebSocket support for streaming diagnostics, and restricted CORS.
 
-**NiceGUI Browser Dashboard** -- Dark-themed browser UI with Serial Cables branding. Provides real-time device cards, port grids, eye diagram charts, LTSSM timeline visualization, and performance monitoring.
+**NiceGUI Browser Dashboard** -- Dark-themed browser UI with Serial Cables branding. Provides real-time device cards, port grids, eye diagram charts, LTSSM timeline visualization, performance monitoring, and a live workflow monitor with progress tracking, elapsed time, and recipe-specific metric cards.
 
 **Diagnostics Suite** -- Comprehensive PCIe validation tooling:
 
@@ -605,6 +605,9 @@ athena recipe list-workflows
 
 # Run a saved workflow
 athena recipe run-workflow morning_checkout -d /dev/switchtec0
+
+# Run a workflow and generate an HTML report
+athena recipe run-workflow morning_checkout -d /dev/switchtec0 --report -o ./reports
 ```
 
 ### Server Command
@@ -777,10 +780,15 @@ The Athena NiceGUI dashboard provides a browser-based interface for device manag
 | Performance | Bandwidth and latency counter display |
 | Workflows | 18 pre-composed validation recipes with live progress |
 | Workflow Builder | Create, save, load, and run multi-recipe workflows with control flow |
+| Workflow Monitor | Real-time progress bar, elapsed time, pass/fail counters, and recipe-specific metric cards |
 
 **Visual components:** device cards, port grids, eye diagram charts, and LTSSM timeline widgets. Dark theme with Serial Cables branding.
 
 **Workflow Builder:** Compose multi-recipe sequences (e.g., "morning checkout": link health -> thermal -> BER soak) without writing Python. Supports advanced control flow: per-step on-fail handling (abort / continue / skip next / goto), inter-step data passing via parameter bindings, loop constructs (count, value sweep, until-condition), and conditional branching. Save workflows as shareable JSON files in `~/.switchtec/workflows/`. Run from the browser UI or CLI.
+
+**Live Workflow Monitor:** When running a multi-recipe workflow, the monitor displays a progress bar with elapsed time, per-step pass/fail/warn counters, and recipe-specific metric cards (margin values, BER error counts, bandwidth stats). Completed steps collapse into expandable panels with full detail. Replaces the flat `RecipeStepper` for workflow context while keeping the stepper for single-recipe pages.
+
+**Workflow Run Report:** After a workflow completes, download a self-contained HTML report (dark-themed, no external dependencies). The report includes an executive summary dashboard, device metadata, per-recipe result tables with status badges, and CSS-based data visualizations (bar charts, metric cards). Also available from the CLI via `--report`.
 
 ---
 
@@ -1159,7 +1167,12 @@ src/serialcables_switchtec/
 |       |-- workflow_storage.py # Save/load/list/delete JSON from ~/.switchtec/workflows/
 |       |-- workflow_executor.py # Sequential runner with on-fail, loops, conditions
 |       |-- workflow_expressions.py # Safe expression parser for step data references
-|       +-- workflow_context.py # Execution context for inter-step data passing
+|       |-- workflow_context.py # Execution context for inter-step data passing
+|       |-- monitor_state.py    # Live monitor runtime state accumulator
+|       |-- workflow_report.py  # Self-contained HTML report generator
+|       |-- report_sections.py  # Recipe-specific HTML section renderers
+|       |-- report_charts.py    # CSS-based chart primitives (bar charts, metric cards, badges)
+|       +-- export.py           # DeviceContext, make_device_context, RecipeRunExporter
 |
 |-- models/                     # Pydantic models (frozen, immutable)
 |   |-- device.py               # DeviceInfo, PortId, PortStatus, DeviceSummary
@@ -1181,7 +1194,8 @@ src/serialcables_switchtec/
 |   |-- mrpc.py                 # Raw MRPC command interface
 |   |-- osa.py                  # start, stop, config-type, config-pattern, capture, read, dump-config
 |   |-- perf.py                 # bw (--watch), latency-setup, latency
-|   +-- recipe.py               # list, params, run, list-workflows, run-workflow
+|   |-- recipe.py               # list, params, run, list-workflows, run-workflow (--report)
+|   +-- monitor_format.py      # CLI formatting helpers for workflow step headers and summary tables
 |
 |-- api/                        # FastAPI REST + WebSocket API
 |   |-- app.py                  # Application factory, CORS, lifespan, auth
@@ -1213,7 +1227,9 @@ src/serialcables_switchtec/
 |   |   |-- eye_chart.py
 |   |   |-- ltssm_timeline.py
 |   |   |-- param_inputs.py     # Shared parameter widget factory (used by recipe card + workflow builder)
-|   |   +-- workflow_step_editor.py  # Single-step editor row with Advanced panel (on-fail, bindings, loops, conditions)
+|   |   |-- workflow_step_editor.py  # Single-step editor row with Advanced panel (on-fail, bindings, loops, conditions)
+|   |   |-- workflow_monitor.py # Live workflow progress component with metric cards
+|   |   +-- monitor_metrics.py  # Recipe-specific NiceGUI metric card renderers
 |   +-- pages/                  # Full-page views
 |       |-- discovery.py
 |       |-- dashboard.py
@@ -1285,7 +1301,7 @@ pytest -m integration
 pytest tests/ -x -q --tb=short --cov --cov-report=term-missing --cov-report=xml:coverage.xml
 ```
 
-**Current status:** 1805 tests across unit, integration, and end-to-end suites organized by domain (device, diagnostics, firmware, events, fabric, performance, error handlers, workflow control flow). Integration tests (`tests/integration/`) use real frozen Pydantic models to catch type errors at recipe boundaries. Coverage configuration is in `pyproject.toml` with `branch=true` and `fail_under=50`. The UI layer requires a NiceGUI runtime and is not covered by automated tests.
+**Current status:** 1913 tests across unit, integration, and end-to-end suites organized by domain (device, diagnostics, firmware, events, fabric, performance, error handlers, workflow control flow, monitor state, report generation). Integration tests (`tests/integration/`) use real frozen Pydantic models to catch type errors at recipe boundaries. Coverage configuration is in `pyproject.toml` with `branch=true` and `fail_under=50`. The UI layer requires a NiceGUI runtime and is not covered by automated tests.
 
 **Public testing module:** Validation engineers can write pytest suites without hardware by importing `serialcables_switchtec.testing`:
 

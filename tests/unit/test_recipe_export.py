@@ -9,7 +9,7 @@ from pathlib import Path
 from serialcables_switchtec.core.workflows.export import (
     DeviceContext,
     RecipeRunExporter,
-    _make_device_context,
+    make_device_context,
 )
 from serialcables_switchtec.core.workflows.models import (
     RecipeResult,
@@ -78,8 +78,8 @@ class TestDeviceContext:
             raised = True
         assert raised
 
-    def test_make_device_context_has_timestamp(self):
-        ctx = _make_device_context(name="test", generation="GEN4")
+    def testmake_device_context_has_timestamp(self):
+        ctx = make_device_context(name="test", generation="GEN4")
         assert ctx.timestamp
         assert "T" in ctx.timestamp
 

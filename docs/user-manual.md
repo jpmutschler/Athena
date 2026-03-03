@@ -1119,14 +1119,33 @@ When you click **Run Workflow**:
 
 1. The executor validates all recipe keys, parameters, labels (no duplicates), and GOTO targets up front.
 2. Each recipe runs sequentially, yielding step-by-step results.
-3. The RecipeStepper displays results prefixed with the workflow context: `"[1/3] Link Health Check > Read port status"`.
+3. The **Workflow Monitor** displays real-time progress:
+   - A **progress bar** with elapsed time and step count (`"2/5"`).
+   - **Pass/Fail/Warn counters** updating live as results stream in.
+   - **Recipe-specific metric cards** for the currently running step (e.g., per-lane margin values, BER error counts, bandwidth stats).
+   - Completed steps collapse into **expandable panels** showing all step details and metric cards.
 4. Between recipes, the executor checks for cancellation.
 5. Conditions are evaluated before each step; steps that don't meet their condition are skipped.
 6. Parameter bindings are resolved from the execution context before each step runs.
 7. Loop steps repeat according to their loop configuration, with iteration data stored for subsequent steps.
 8. On critical failure, the step's **On Fail** action determines whether to abort, continue, skip the next step, or jump to a labeled step.
 9. GOTO cycles are detected (max 3 visits to the same step) and abort the workflow to prevent infinite loops.
-10. On completion, a workflow summary banner shows total/completed/skipped recipe counts, skip reasons, and loop iteration counts.
+10. On completion, a **summary banner** shows the overall verdict (Passed/Failed/Aborted), recipe counts, and elapsed time.
+11. A **Download Report** button appears, allowing you to save a self-contained HTML report of the workflow run.
+
+### Workflow Run Report
+
+After a workflow completes, a **Download Report** button appears below the summary banner. Clicking it generates and downloads a self-contained HTML report.
+
+The report includes:
+
+1. **Header** -- device name, generation, firmware version, and timestamp.
+2. **Executive summary dashboard** -- card grid with Total Recipes, Passed, Failed, Warnings, Skipped, Duration, and an overall verdict banner.
+3. **Workflow configuration** -- name, description, and step list table (index, recipe, label, on-fail policy).
+4. **Per-recipe sections** -- recipe header with verdict badge and duration, step results table (step name, status, criticality, detail), and recipe-specific data visualizations (CSS bar charts, metric cards). Loop iterations are shown as separate sub-sections.
+5. **Footer** -- generation timestamp and tool info.
+
+The report uses a dark theme with inline CSS and requires no external dependencies or JavaScript. It can be opened in any browser, shared with team members, or archived for compliance.
 
 ### CLI Access
 
@@ -1138,14 +1157,34 @@ athena recipe list-workflows
 
 # Run a saved workflow
 athena recipe run-workflow morning_checkout -d /dev/switchtec0
+
+# Run a workflow and generate an HTML report
+athena recipe run-workflow morning_checkout -d /dev/switchtec0 --report -o ./reports
 ```
 
-The CLI output includes skip reasons and loop iteration counts:
+The CLI output includes step headers, inline metrics, and a summary table:
 
 ```
-[1] Link Health Check: 2P 0F 0W (1.2s)
-[2] BER Soak: SKIPPED (Condition not met)
-[3] Counting Recipe: 1P 0F 0W (0.5s) x4 iters
+=== [1/3] Link Health Check ===
+  [PASS] Read port status: Port 0: L0 (link up, x4 Gen4)
+  [PASS] Read die temperature: 51.2 C
+
+=== [2/3] BER Soak Test ===
+  [PASS] Configure pattern generator: PRBS31 at Gen4
+  [PASS] BER soak complete: 0 errors in 30.0s (total_errors=0)
+
+=== [3/3] Switch Thermal Profile ===
+  [PASS] Thermal profile complete: max 52.1 C
+
+Morning Checkout: Passed
+  Recipes: 3/3
+  Time: 42.3s
+```
+
+When `--report` is specified, the HTML report is written to the output directory and the path is printed:
+
+```
+Report: ./reports/workflow_report_morning_checkout_20260303_143022.html
 ```
 
 ### Workflow JSON Format
