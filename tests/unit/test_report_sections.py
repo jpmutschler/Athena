@@ -183,20 +183,31 @@ class TestBerSoak:
 
 class TestBandwidthBaseline:
     def test_renders_bandwidth_cards(self) -> None:
+        # Data mirrors what the BandwidthBaseline recipe actually emits:
+        # both raw byte stats and computed Mbps stats
         results = [
             _make_result(data={
+                "egress_avg": 625000000,
+                "egress_min": 562500000,
+                "egress_max": 687500000,
+                "ingress_avg": 600000000,
+                "ingress_min": 525000000,
+                "ingress_max": 650000000,
                 "egress_avg_mbps": 5000,
                 "egress_min_mbps": 4500,
                 "egress_max_mbps": 5500,
                 "ingress_avg_mbps": 4800,
                 "ingress_min_mbps": 4200,
                 "ingress_max_mbps": 5200,
+                "sample_count": 10,
             }),
         ]
         step_summary = _make_step_summary(recipe_key="bandwidth_baseline", results=results)
         html_str = render_recipe_section(step_summary)
         assert "Egress Avg" in html_str
         assert "Ingress Avg" in html_str
+        assert "MB/s" in html_str
+        assert "Egress Bandwidth" in html_str
 
 
 # ---------------------------------------------------------------------------

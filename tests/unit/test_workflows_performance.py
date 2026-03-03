@@ -5,6 +5,8 @@ from __future__ import annotations
 import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from serialcables_switchtec.core.workflows.bandwidth_baseline import BandwidthBaseline
 from serialcables_switchtec.core.workflows.latency_profile import LatencyProfile
 from serialcables_switchtec.core.workflows.models import (
@@ -94,6 +96,9 @@ class TestBandwidthBaseline:
         assert final[2].status == StepStatus.PASS
         assert final[2].data["egress_avg"] == 1000
         assert final[2].data["ingress_avg"] == 500
+        # Mbps keys: 1000 bytes * 8 / 1_000_000 us = 0.008 Mbps
+        assert final[2].data["egress_avg_mbps"] == pytest.approx(0.008)
+        assert final[2].data["ingress_avg_mbps"] == pytest.approx(0.004)
 
         assert summary.passed == 3
         assert summary.failed == 0
@@ -271,6 +276,13 @@ class TestBandwidthBaseline:
         assert stats_step.data["ingress_max"] == 600
         assert stats_step.data["ingress_avg"] == 500.0
         assert stats_step.data["sample_count"] == 2
+        # Mbps keys: bytes * 8 / 1_000_000 us
+        assert stats_step.data["egress_min_mbps"] == pytest.approx(0.0064)
+        assert stats_step.data["egress_max_mbps"] == pytest.approx(0.0096)
+        assert stats_step.data["egress_avg_mbps"] == pytest.approx(0.008)
+        assert stats_step.data["ingress_min_mbps"] == pytest.approx(0.0032)
+        assert stats_step.data["ingress_max_mbps"] == pytest.approx(0.0048)
+        assert stats_step.data["ingress_avg_mbps"] == pytest.approx(0.004)
 
 
 # ---------------------------------------------------------------------------

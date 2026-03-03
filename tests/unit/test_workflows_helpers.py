@@ -182,11 +182,12 @@ def make_eye_data(pixels=None, pixel_count=None):
     return eye
 
 
-def make_bw_result(egress_total=1000, ingress_total=500):
+def make_bw_result(egress_total=1000, ingress_total=500, time_us=1_000_000):
     """Create a mock bandwidth result."""
     bw = MagicMock()
     bw.egress.total = egress_total
     bw.ingress.total = ingress_total
+    bw.time_us = time_us
     return bw
 
 

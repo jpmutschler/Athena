@@ -118,6 +118,7 @@ class BandwidthBaseline(Recipe):
         )
         egress_samples: list[int] = []
         ingress_samples: list[int] = []
+        time_us_samples: list[int] = []
         poll_start = time.monotonic()
 
         while time.monotonic() - poll_start < duration_s:
@@ -128,6 +129,7 @@ class BandwidthBaseline(Recipe):
                 if bw:
                     egress_samples.append(bw[0].egress.total)
                     ingress_samples.append(bw[0].ingress.total)
+                    time_us_samples.append(bw[0].time_us)
             except SwitchtecError:
                 pass
             remaining = duration_s - (time.monotonic() - poll_start)
@@ -161,6 +163,17 @@ class BandwidthBaseline(Recipe):
             yield r
             return self._make_summary(results, time.monotonic() - start)
 
+        def _to_mbps(byte_val: float, t_us: float) -> float:
+            return byte_val * 8.0 / t_us if t_us > 0 else 0.0
+
+        # Compute per-sample Mbps rates
+        egress_mbps = [
+            _to_mbps(b, t) for b, t in zip(egress_samples, time_us_samples)
+        ]
+        ingress_mbps = [
+            _to_mbps(b, t) for b, t in zip(ingress_samples, time_us_samples)
+        ]
+
         stats = {
             "egress_min": min(egress_samples),
             "egress_max": max(egress_samples),
@@ -168,13 +181,19 @@ class BandwidthBaseline(Recipe):
             "ingress_min": min(ingress_samples),
             "ingress_max": max(ingress_samples),
             "ingress_avg": sum(ingress_samples) / sample_count,
+            "egress_min_mbps": min(egress_mbps),
+            "egress_max_mbps": max(egress_mbps),
+            "egress_avg_mbps": sum(egress_mbps) / sample_count,
+            "ingress_min_mbps": min(ingress_mbps),
+            "ingress_max_mbps": max(ingress_mbps),
+            "ingress_avg_mbps": sum(ingress_mbps) / sample_count,
             "sample_count": sample_count,
         }
         r = self._make_result(
             "Compute stats", 2, total_steps, StepStatus.PASS,
             detail=(
-                f"Egress avg={stats['egress_avg']:.0f}, "
-                f"Ingress avg={stats['ingress_avg']:.0f}"
+                f"Egress avg={stats['egress_avg_mbps']:.1f} Mbps, "
+                f"Ingress avg={stats['ingress_avg_mbps']:.1f} Mbps"
             ),
             data=stats,
         )
